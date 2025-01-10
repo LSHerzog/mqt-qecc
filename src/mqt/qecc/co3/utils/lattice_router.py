@@ -7,6 +7,9 @@ import copy
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
+import collections
+import itertools
 
 
 class HexagonalLattice:
@@ -103,16 +106,91 @@ class HexagonalLattice:
             mapped_2
         ), "Something went wrong in the triangular mapping"
         return int(max(lst))
+    
+    def gen_layout_sparse(self) -> list[tuple[int, int]]:
+        """Generates Sparse Layout (data qubit locations without qubit labels).
 
-    def plot_lattice(self) -> None:
+        Returns:
+            list[tuple[int, int]]: Locations on the graph for data qubits (no qubit labels assigned yet)
+        """
+        data_qubit_locs = [] # start with (x,y) = 1,2
+        for x in range(1, self.n + 1): #no data qubits on x=0 to ensure free boundary
+            if (x + 1, 0) not in list(self.G.nodes) and (x + 1, 1) not in list(self.G.nodes):
+                break
+            for y in np.arange(2, self.m * 2 + 1, 6):
+                y_temp = y
+                if x % 2 == 0:
+                    y_temp += 3
+                if (x, y_temp + 1) in list(self.G.nodes) and (x, y_temp + 2) in list(self.G.nodes):
+                    data_qubit_locs.append((x, y_temp))
+                else:
+                    break
+        return data_qubit_locs
+    
+    def gen_layout_pair(self) -> list[tuple[int, int]]:
+        """Generates Pair Layout (data qubit locations without qubit labels).
+
+        Returns:
+            list[tuple[int, int]]: Locations on the graph for data qubits (no qubit labels assigned yet)
+        """
+        data_qubit_locs = [] # start with (x,y) = 1,2
+        for x in np.arange(1, self.n + 1, 2): #no data qubits on x=0 to ensure free boundary
+            if (x + 1, 0) not in list(self.G.nodes) and (x + 1, 1) not in list(self.G.nodes):
+                break
+            for y in np.arange(2, self.m * 2 + 1, 4):
+                if (x, y + 1) in list(self.G.nodes) and (x, y + 2) in list(self.G.nodes):
+                    data_qubit_locs.append((x, y))
+                else:
+                    break
+                if (x, y + 2) in list(self.G.nodes) and (x, y + 3) in list(self.G.nodes):
+                    data_qubit_locs.append((x, y+1))
+                else:
+                    break
+        return data_qubit_locs
+    
+    def gen_layout_row(self) -> list[tuple[int, int]]:
+        """Generates Row Layout (data qubit locations without qubit labels).
+
+        Returns:
+            list[tuple[int, int]]: Locations on the graph for data qubits (no qubit labels assigned yet)
+        """
+        data_qubit_locs = [] # start with (x,y) = 1,2
+        for y in np.arange(2, self.m * 2 + 1, 4):
+            flag_x1 = True
+            flag_x2 = True
+            for x in range(1, self.n + 1):
+                if (x, y + 1) not in list(self.G.nodes) or (x, y + 2) not in list(self.G.nodes):
+                    break
+                if (x + 1, y) in list(self.G.nodes):
+                    data_qubit_locs.append((x, y))
+                else:
+                    flag_x1 = False
+                if (x + 1, y + 1) in list(self.G.nodes):
+                    data_qubit_locs.append((x, y + 1))
+                else:
+                    flag_x2 = False
+                if not flag_x1 and not flag_x2:
+                    break
+        return data_qubit_locs
+        
+    def plot_lattice(self, size: tuple[float,float] = (3.5, 3.5), data_qubit_locs: list[tuple[int, int]] = []) -> None:
         """Plots the lattice G with networkx labels."""
         pos = nx.get_node_attributes(self.G, "pos")
 
-        plt.figure(figsize=(3.5, 3.5))
+        plt.figure(figsize=size)
         nx.draw(self.G,
                 pos, with_labels=True,
                 node_color="lightgray",
                 edge_color="lightblue")
+        
+        if len(data_qubit_locs) != 0:
+                nx.draw_networkx_nodes(
+                    self.G,
+                    pos,
+                    nodelist=data_qubit_locs,
+                    node_color="orange",
+                )
+
 
 
 class ShortestFirstRouter(HexagonalLattice):
@@ -139,7 +217,7 @@ class ShortestFirstRouter(HexagonalLattice):
         self.terminal_pairs = terminal_pairs
         self.layers_cnots = self.split_layer_terminal_pairs()
         self.layers_cnots_orig = self.layers_cnots.copy()
-        self.vdp_layers = self.find_total_vdp_layers()
+        #self.vdp_layers = self.find_total_vdp_layers()
 
     def split_layer_terminal_pairs(self) -> list[list[tuple[int,int]]]:
         """Split Terminal Pairs into layers initially.
@@ -164,6 +242,66 @@ class ShortestFirstRouter(HexagonalLattice):
             layers.append(current_layer)
 
         return layers
+    
+    def measure_terminal_pair_distances(self) -> list[int]:
+        """Compute the plain distance between all the terminal pairs.
+
+        Returns:
+            list[int]: Distances between terminal pairs (same order as self.terminal_pairs)
+        """
+        lst_distances = []
+        for t_p in self.terminal_pairs_orig:
+            tp1 = tuple(int(i) for i in t_p[0])
+            tp2 = tuple(int(i) for i in t_p[1])
+            d = self.distance_triangular(tp1, tp2)
+            lst_distances.append(d)
+        return lst_distances
+    
+    def count_crossings_per_layer(self) -> list[int]:
+        """Counts the crossings of the simple paths (respecting terminals) per layer.
+
+        Returns:
+            list[int]: Number of crossings per initial layer. len is len(self.layers_cnots_orig)
+        """
+        lst_crossings = []
+        for layer in self.layers_cnots_orig:
+            paths = []
+            for t_p in layer:
+                g_temp = self.G.copy() # this is duplicate code from `order_terminal_pairs`
+                terminal_pairs_flattened = [
+                    pair for sublist in layer
+                    for pair in sublist
+                ]
+                terminals_temp = [
+                    pair for pair in terminal_pairs_flattened
+                    if pair != t_p[0] and pair != t_p[1]
+                ]
+                terminals_temp = list(set(terminals_temp))
+                g_temp.remove_nodes_from(terminals_temp)
+                try:
+                    path = nx.dijkstra_path(g_temp, t_p[0], t_p[1])
+                    paths.append(path)
+                except nx.NetworkXNoPath as exc:
+                    msg = (
+                        "Your choice of terminal pairs locks in at least one terminal. "
+                        "Reconsider your choice of terminal pairs."
+                    )
+                    raise ValueError(
+                        msg
+                    ) from exc
+            #check the paths for overlaps
+            # Create a mapping of elements to the sublists they appear in
+            element_to_sublists = collections.defaultdict(set)
+            for i, sublist in enumerate(paths):
+                for element in sublist:
+                    element_to_sublists[element].add(i)
+            # Count crossings (pairwise sublist overlaps for each element)
+            crossing_count = 0
+            for sublists in element_to_sublists.values():
+                if len(sublists) > 1:
+                    crossing_count += len(list(itertools.combinations(sublists, 2)))
+            lst_crossings.append(crossing_count)
+        return lst_crossings
 
     def order_terminal_pairs(self, layer: int) -> None:
         """Orders terminal pairs of a layer inplace.
@@ -317,11 +455,12 @@ class ShortestFirstRouter(HexagonalLattice):
             vdp_layers += vdp_layers_temp
         return vdp_layers
 
-    def plot_lattice_paths(self, layer: int) -> None:
+    def plot_lattice_paths(self, layer: int, layout: dict = {}, size: tuple[float,float] = (3.5,3.5)) -> None:
         """Plots the graph and the corresponding VDP of a layer.
 
         Args:
             layer (int): label of layer to plot
+            layout (dict): potentially also display the qubit labels. keys = qubit label, value = node label
         """
         pos = nx.get_node_attributes(self.G, "pos")
 
@@ -329,11 +468,12 @@ class ShortestFirstRouter(HexagonalLattice):
         colormap = plt.cm.get_cmap("rainbow", num_paths)
         colors = [mcolors.to_hex(colormap(i)) for i in range(num_paths)]
 
-        plt.figure(figsize=(3.5, 3.5))
+        plt.figure(figsize=size)
         nx.draw(self.G, pos,
                 with_labels=True,
-                node_color="lightgray",
-                edge_color="lightblue")
+                node_color="gray",
+                edge_color="lightblue",
+                font_size = 8)
 
         for i, path in enumerate(self.vdp_layers[layer].values()):
             if path:
@@ -353,6 +493,21 @@ class ShortestFirstRouter(HexagonalLattice):
                     nodelist=path,
                     node_color=colors[i],
                     label=f"Path {i + 1}"
+                )
+
+        if len(list(layout.keys())) != 0:
+            for key, value in layout.items():
+                node_pos = pos[value]
+                plt.text(node_pos[0], node_pos[1] - 0.1, str(key), 
+                        fontsize=8, color="white", horizontalalignment="center")
+                #also highlight data qubits
+                nx.draw_networkx_nodes(
+                    self.G, 
+                    pos, 
+                    nodelist=layout.values(),  # Nodes to highlight
+                    node_color="none",  # Unfilled circles
+                    edgecolors="lime",  # Neon green outline
+                    linewidths=1.5  # Line width for the outline
                 )
 
         plt.legend()
