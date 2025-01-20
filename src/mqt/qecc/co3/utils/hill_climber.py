@@ -71,9 +71,12 @@ class HillClimbing:
         router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
         if self.metric == "crossing":
             cost = np.sum(router.count_crossings_per_layer())
-        elif self.metric in {"routing", "distance"}:
-            msg = "not implemented yet"
-            raise NotImplementedError(msg)
+        elif self.metric == "distance":
+            distances = router.measure_terminal_pair_distances()
+            cost = np.sum(distances)
+        elif self.metric == "routing":
+            vdp_layers = router.find_total_vdp_layers()
+            cost = len(vdp_layers)
         return cost
 
     def gen_random_qubit_assignment(self) -> dict:

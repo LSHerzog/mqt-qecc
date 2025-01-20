@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import collections
 import copy
+import itertools
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import collections
-import itertools
 
 
 class HexagonalLattice:
@@ -173,8 +173,10 @@ class HexagonalLattice:
                     break
         return data_qubit_locs
         
-    def plot_lattice(self, size: tuple[float,float] = (3.5, 3.5), data_qubit_locs: list[tuple[int, int]] = []) -> None:
+    def plot_lattice(self, size: tuple[float,float] = (3.5, 3.5), data_qubit_locs: list[tuple[int, int]] | None = None) -> None:
         """Plots the lattice G with networkx labels."""
+        if data_qubit_locs is None:
+            data_qubit_locs = []
         pos = nx.get_node_attributes(self.G, "pos")
 
         plt.figure(figsize=size)
@@ -455,13 +457,16 @@ class ShortestFirstRouter(HexagonalLattice):
             vdp_layers += vdp_layers_temp
         return vdp_layers
 
-    def plot_lattice_paths(self, layer: int, layout: dict = {}, size: tuple[float,float] = (3.5,3.5)) -> None:
+    def plot_lattice_paths(self, layer: int, layout: dict | None = None, size: tuple[float,float] = (3.5,3.5)) -> None:
         """Plots the graph and the corresponding VDP of a layer.
 
         Args:
             layer (int): label of layer to plot
             layout (dict): potentially also display the qubit labels. keys = qubit label, value = node label
+            size (tuple[float,float], optional): _description_. Size of the plot. Defaults to (3.5,3.5).
         """
+        if layout is None:
+            layout = {}
         pos = nx.get_node_attributes(self.G, "pos")
 
         num_paths = len(self.vdp_layers[layer].keys())

@@ -1,1 +1,1 @@
-"""Tests for the Color Code Compilation Module"""
+"""Tests for the Color Code Compilation Module."""

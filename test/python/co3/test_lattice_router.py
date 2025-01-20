@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-
 import pytest
 
-#import mqt.qecc.co3 as co
-sys.path.append("../../../src/mqt/qecc/co3/utils")
-import lattice_router as co
+import mqt.qecc.co3 as co
 
 
 @pytest.mark.parametrize(
@@ -47,6 +43,7 @@ def test_shortest_first_router_1():
     ]
     m, n = 5, 5
     lat = co.ShortestFirstRouter(m, n, terminal_pairs)
+    lat.vdp_layers = lat.find_total_vdp_layers()
 
     expected_vdp_layers = [
         {
@@ -72,6 +69,7 @@ def test_shortest_first_router_2():
     ]
     m, n = 5, 5
     lat = co.ShortestFirstRouter(m, n, terminal_pairs)
+    lat.vdp_layers = lat.find_total_vdp_layers()
     error_message = f"Expected 2 layers, but got {len(lat.vdp_layers)}"
     assert len(lat.vdp_layers) == 2, error_message
 
@@ -85,6 +83,7 @@ def test_shortest_first_router_3():
         ((0, 5), (0, 6))]
     m, n = 3, 3
     lat = co.ShortestFirstRouter(m, n, terminal_pairs)
+    lat.vdp_layers = lat.find_total_vdp_layers()
 
     expected_vdp_layers = [
         {((0, 5), (0, 6)): [(0, 5), (0, 6)],
