@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import operator
+import pickle
 import random
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,6 +16,11 @@ from tqdm import tqdm
 from .lattice_router import HexagonalLattice, ShortestFirstRouter
 from .misc import translate_layout_circuit
 
+
+def save_to_file(path: str, data: dict) -> None:
+    """Safely saves data to a file."""
+    with Path(path).open("wb") as pickle_file:
+        pickle.dump(data, pickle_file)
 
 class HillClimbing:
     """Hill Climbing with random restarts for routing layouts."""
@@ -62,6 +70,8 @@ class HillClimbing:
         self.circuit = circuit
         flattened_qubit_labels = [num for tup in self.circuit for num in tup]
         self.q = max(flattened_qubit_labels)+1
+        if self.q < len(self.data_qubit_locs):
+            self.data_qubit_locs = self.data_qubit_locs[:self.q] #cut-off unneccessary qubit spots.
         assert len(list(set(flattened_qubit_labels))) == self.q, "The available qubits must allow a continuous labeling."
         assert len(data_qubit_locs)>=self.q, "The lattice must be able to host the number of qubits given in the circuit"
 
@@ -109,10 +119,48 @@ class HillClimbing:
             neighborhood.append(layout_copy)
 
         return neighborhood
-        
 
-    def run(self) -> tuple[dict, int, int, dict]:
+    def _parallel_hill_climbing(self, restart: int) -> tuple:
+        """Helper method for parallel execution of hill climbing restarts.
+        
+        Args:
+            restart (int): The restart index.
+
+        Returns:
+            Tuple of (restart index, best solution, best score, history for this restart)
+        """
+        current_solution = self.gen_random_qubit_assignment()
+        current_score = self.evaluate_solution(current_solution)
+        history_temp = {"scores": [], "layout_init": current_solution.copy()}
+
+        for _ in range(self.max_iterations):
+            neighbors = self.gen_neighborhood(current_solution)
+            if not neighbors:
+                break  # No neighbors, end this restart
+
+            # Find the best neighbor
+            neighbor_scores = [(neighbor, self.evaluate_solution(neighbor)) for neighbor in neighbors]
+            best_neighbor, best_neighbor_score = min(neighbor_scores, key=operator.itemgetter(1))  # Min for minimization
+
+            # If no improvement, stop searching in this path
+            if best_neighbor_score >= current_score:
+                break
+
+            # Update current solution
+            current_solution, current_score = best_neighbor, best_neighbor_score
+            history_temp["scores"].append(current_score)
+
+        history_temp.update({"layout_final": current_solution.copy()})
+        return restart, current_solution, current_score, history_temp
+
+    def run(self, prefix: str, suffix: str, parallel: bool, processes: int = 8) -> tuple[dict, int, int, dict]:
         """Executes the Hill Climbing algorithm with random restarts.
+
+        Args:
+            prefix (str): prefix to add to the log file's paths.
+            suffix (str): suffix to add to the log file's paths.
+            parallel (bool): decides whether to use multiprocessing or not
+            processes (int): number of processes (=number of available physical kernels)
 
         Returns:
             best_solution: The best solution found.
@@ -122,35 +170,59 @@ class HillClimbing:
         best_rep = None
         best_score = float("inf")  # Use '-inf' for maximization, 'inf' for minimization
         score_history = {}
+        path = prefix + f"hill_climbing_data_q{self.q}_numcnots{len(self.circuit)}_layout{self.layout_type}_metric{self.metric}_parallel{parallel}" + suffix
+        self.path_histories = path
 
-        for restart in tqdm(range(self.max_restarts), desc="Hill Climbing Restarts..."):
-            current_solution = self.gen_random_qubit_assignment()
-            current_score = self.evaluate_solution(current_solution)
-            history_temp = {"scores" : [], "layout_init" : current_solution.copy()}
-            for _ in range(self.max_iterations):
-                neighbors = self.gen_neighborhood(current_solution)
-                if not neighbors:
-                    break  # No neighbors, end this restart
+        if parallel:
+            # Parallel Execution
+            with multiprocessing.Pool(processes = processes) as pool:
+                results = list(
+                    tqdm(
+                        pool.imap(self._parallel_hill_climbing, range(self.max_restarts)),
+                        total=self.max_restarts,
+                        desc="Hill Climbing Restarts...",
+                    )
+                )
 
-                # Find the best neighbor
-                neighbor_scores = [(neighbor, self.evaluate_solution(neighbor)) for neighbor in neighbors]
-                best_neighbor, best_neighbor_score = min(neighbor_scores, key=operator.itemgetter(1))  # Change to min for minimization
+                for restart, solution, score, history in results:
+                    score_history[restart] = history
+                    save_to_file(path, score_history)
 
-                # If no improvement, stop searching in this path
-                if best_neighbor_score >= current_score:
-                    break
+                    if score < best_score:
+                        best_solution, best_score = solution, score
+                        best_rep = restart
 
-                # Update current solution
-                current_solution, current_score = best_neighbor, best_neighbor_score
-                history_temp["scores"].append(current_score)
+        else: #sequential 
+            for restart in tqdm(range(self.max_restarts), desc="Hill Climbing Restarts..."):
+                current_solution = self.gen_random_qubit_assignment()
+                current_score = self.evaluate_solution(current_solution)
+                history_temp = {"scores" : [], "layout_init" : current_solution.copy()}
+                for _ in range(self.max_iterations):
+                    neighbors = self.gen_neighborhood(current_solution)
+                    if not neighbors:
+                        break  # No neighbors, end this restart
 
-            history_temp.update({"layout_final" : current_solution.copy()})
-            score_history.update({restart: history_temp})
+                    # Find the best neighbor
+                    neighbor_scores = [(neighbor, self.evaluate_solution(neighbor)) for neighbor in neighbors]
+                    best_neighbor, best_neighbor_score = min(neighbor_scores, key=operator.itemgetter(1))  # Change to min for minimization
 
-            # Update global best solution if current is better
-            if current_score < best_score:
-                best_solution, best_score = current_solution, current_score
-                best_rep = restart
+                    # If no improvement, stop searching in this path
+                    if best_neighbor_score >= current_score:
+                        break
+
+                    # Update current solution
+                    current_solution, current_score = best_neighbor, best_neighbor_score
+                    history_temp["scores"].append(current_score)
+
+                history_temp.update({"layout_final" : current_solution.copy()})
+                score_history.update({restart: history_temp})
+                with Path(path).open("wb") as pickle_file:
+                    pickle.dump(score_history, pickle_file)
+
+                # Update global best solution if current is better
+                if current_score < best_score:
+                    best_solution, best_score = current_solution, current_score
+                    best_rep = restart
 
         return best_solution, best_score, best_rep, score_history
     
