@@ -20,8 +20,18 @@ class SnakeBuilder:
         """Initializes n snake.
 
         Args:
-            g (nx.Graph): _description_
-            positions (list[tuple]): _description_
+            g (nx.Graph): Hexagonal graph on which the data qubits are placed
+            positions (list[dictionary]): The positions must have key = networkx label, value = 0,..6. The labeling from 0-6 for each
+                steane patch (each patch has one dictionary). This follows a strict convention, the order of the overall list is important
+                since consecutive dictionaries must have patches neighboring on the lattice. Each patch has three edges: (0,2,1), (3,5,1), (0,4,3).
+                Your current patch has to be connected with the next patch via a (3,5,1) -  (0,2,1) or (0,4,3) - (0,2,1) connection. This means
+                you always have to `dock` your new patch with its (0,2,1) patch to the previous patch. note that (0,2,1) -(0,2,1) connections are NOT allowed.
+                the ordering of 0-6 per patch must follow the convention such that self.standard_steane is consistent.
+                     3
+                   / | \
+                  5--6--4  
+                 /   |   \
+                2----1----0
         """
         self.g = g
         self.positions = positions
@@ -264,8 +274,8 @@ class SnakeBuilder:
                             stab_temp.update({key: val})
                     z_stabilizers.append(stab_temp)
                     break
-            #find the weight4 which must be disjoint to the weight 2
-            weight_four = self.find_disjoint_dict(compatible_weight_four, list(weight_two.values()))
+            #find the weight4 which must be disjoint to the weight 2 and pairwise neighbors on the lattice
+            weight_four = self.find_disjoint_dict(current_patch, next_patch, compatible_weight_four, list(weight_two.values()))
             #add to stabs
             stab_temp = {}
             for label in weight_four["i"]:
@@ -294,16 +304,29 @@ class SnakeBuilder:
                 return x_stab
         return None  # Return None if no match is found
     
-    @staticmethod
-    def find_disjoint_dict(dict_list : list[dict], pair: list[int]) -> dict:
-        """Finds a dictionary in which the total of integers in the values is disjoint to the given pair."""
+    def find_disjoint_dict(self, current_patch: dict, next_patch: dict, dict_list : list[dict], pair: list[int]) -> dict:
+        """Finds a dictionary in which the total of integers in the values is disjoint to the given pair. AND the weight4 must bepairwise neighbors."""
         pair_set = set(pair)  # Convert the pair to a set for easy comparison
+        def neighboring_pair(current_patch: dict, next_patch: dict, dictionary: dict) -> bool:
+            """Checks whether at least one neighboring pair in chosen 4-weight stab."""
+            for label_i in dictionary["i"]:
+                for label_i1 in dictionary["i+1"]:
+                    # Find positions in the dictionaries
+                    positions_i = [pos for pos, label in current_patch.items() if label == label_i]
+                    positions_i1 = [pos for pos, label in next_patch.items() if label == label_i1]
 
+                    # Check if any position from i is a neighbor of a position from i+1
+                    for pos_i in positions_i:
+                        for pos_i1 in positions_i1:
+                            if self.g.has_edge(pos_i, pos_i1):  # Check for an edge
+                                return True
+            return False
+    
         for dictionary in dict_list:
             # Get all integers in the dictionary's values
             value_set = {val for values in dictionary.values() for val in values}
             # Check if the two sets are disjoint
-            if pair_set.isdisjoint(value_set):
+            if pair_set.isdisjoint(value_set) and neighboring_pair(current_patch, next_patch, dictionary):
                 return dictionary
 
         return None 
