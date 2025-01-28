@@ -173,25 +173,39 @@ class HexagonalLattice:
                     break
         return data_qubit_locs
         
-    def plot_lattice(self, size: tuple[float,float] = (3.5, 3.5), data_qubit_locs: list[tuple[int, int]] | None = None) -> None:
+    def plot_lattice(self, size: tuple[float,float] = (3.5, 3.5), 
+                     data_qubit_locs: list[tuple[int, int]] | None = None, 
+                     factory_locs: list[tuple[int,int]] | None = None
+                     ) -> None:
         """Plots the lattice G with networkx labels."""
         if data_qubit_locs is None:
             data_qubit_locs = []
+        if factory_locs is None:
+            factory_locs = []
         pos = nx.get_node_attributes(self.G, "pos")
 
         plt.figure(figsize=size)
         nx.draw(self.G,
                 pos, with_labels=True,
+                font_size = 8,
                 node_color="lightgray",
                 edge_color="lightblue")
         
         if len(data_qubit_locs) != 0:
-                nx.draw_networkx_nodes(
-                    self.G,
-                    pos,
-                    nodelist=data_qubit_locs,
-                    node_color="orange",
-                )
+            nx.draw_networkx_nodes(
+                self.G,
+                pos,
+                nodelist=data_qubit_locs,
+                node_color="orange",
+            )
+
+        if len(factory_locs) != 0:
+            nx.draw_networkx_nodes(
+                self.G,
+                pos,
+                nodelist=factory_locs,
+                node_color="violet",
+            )
 
 
 
@@ -212,7 +226,8 @@ class ShortestFirstRouter(HexagonalLattice):
         Args:
             m (int): The number of rows of hexagons in the lattice.
             n (int): The number of columns of hexagons in the lattice.
-            terminal_pairs (list[tuple[tuple[int, int], tuple[int, int]]): pairs of vertices to be connected (networkx labeling)
+            terminal_pairs (list[tuple[tuple[int, int], tuple[int, int]]]): pairs of vertices to be connected (networkx labeling),
+                
         """
         super().__init__(m, n)
         self.terminal_pairs_orig = terminal_pairs.copy()
@@ -517,3 +532,452 @@ class ShortestFirstRouter(HexagonalLattice):
 
         plt.legend()
         plt.show()
+
+
+class ShortestFirstRouterTGates(HexagonalLattice):
+    """Shortest First Routing for VDP on Hexagonal Lattice with adaption to greedily include T gates."""
+    def __init__(
+        self, m: int, n: int,
+        terminal_pairs: list[tuple[tuple[int, int], tuple[int, int]]],
+        factory_positions: list[tuple[int,int]],
+        t: int
+    ) -> None:
+        """Routing for Hexagonal Lattice with adaption to greedily include T gates.
+        
+        Start with graph $G$ and an empty solution.
+        While $G$ contains any path connecting any demand pair,
+        choose the shortest such path $P$, add $P$ to the solution,
+        and delete all vertices of $P$ from $G$
+
+        T gates are included by including the shortest connection between any factory site
+        and the respective qubit for the initial ordering. After the ordering, handle T gates
+        similar to CNOTs just that we have to check which factories are available + it may be 
+        necessary to wait 1 or more layers until a T factory becomes available.
+
+        Args:
+            m (int): The number of rows of hexagons in the lattice.
+            n (int): The number of columns of hexagons in the lattice.
+            terminal_pairs (list[tuple[tuple[int, int], tuple[int, int]]): pairs of vertices to be connected (networkx labeling)
+            factory_positions (list[tuple[int,int]]): Positions were factories are placed (should be on the boundary of the data qubits), follows networkx labeling
+            t (int): A factory needs t x d rounds of state distillation to generate a new T state.
+        """
+        super().__init__(m, n)
+        self.terminal_pairs = terminal_pairs
+        self.t = t
+        #check that factory_positions do not overlap with data qubit positions
+        flattened_terminals = [
+            pair
+            for item in terminal_pairs
+            for pair in (item if isinstance(item[0], tuple) else [item])
+        ]
+        self.flattened_terminals = flattened_terminals
+        for factory in factory_positions:
+            assert factory not in flattened_terminals, "Your factory positions overlap with data qubits!"
+        self.factory_positions = factory_positions
+        self.factory_times = {}
+        for factory in factory_positions:
+            self.factory_times.update({factory : t})
+        self.layers_cnot_t = self.split_layer_terminal_pairs()
+        self.layers_cnot_t_orig = self.layers_cnot_t.copy()
+
+    def count_crossings_per_layer(self) -> list[int]:
+        """Counts the crossings of the simple paths between cnots and between shortest factory to qubit path (respecting terminals and factory positions) per layer.
+
+        Returns:
+            list[int]: Number of crossings per initial layer. len is len(self.layers_cnot_t_orig)
+        """
+        # ! TODO: remove redundancies (order_terminal_pairs very similar)
+        lst_crossings = []
+        flattened_terminals_and_factories = self.flattened_terminals.copy() + self.factory_positions.copy()
+        for layer in self.layers_cnot_t_orig:
+            paths = []
+            for t_p in layer:
+                g_temp = self.G.copy() 
+                if isinstance(t_p[0], tuple) and isinstance(t_p[1], tuple):
+                    terminals_temp = [
+                        pair for pair in flattened_terminals_and_factories.copy()
+                        if pair != t_p[0] and pair != t_p[1]
+                    ]
+                    terminals_temp = list(set(terminals_temp))
+                    g_temp.remove_nodes_from(terminals_temp)
+                    try:
+                        path = nx.dijkstra_path(g_temp, t_p[0], t_p[1])
+                        paths.append(path)
+                    except nx.NetworkXNoPath as exc:
+                        msg = (
+                            "Your choice of terminal pairs locks in at least one terminal. "
+                            "Reconsider your choice of terminal pairs."
+                        )
+                        raise ValueError(
+                            msg
+                        ) from exc
+                elif isinstance(t_p[0], int) and isinstance(t_p[1], int):
+                    dist_factories = {} #gather distances to each factory to greedily choose the shortest path
+                    for factory in self.factory_positions:
+                        g_temp = self.G.copy()
+                        terminals_temp = [
+                            pair for pair in flattened_terminals_and_factories.copy()
+                            if pair not in {t_p, factory}
+                        ]
+                        terminals_temp = list(set(terminals_temp))
+                        g_temp.remove_nodes_from(terminals_temp)
+                        try:
+                            path = nx.dijkstra_path(g_temp, t_p, factory)
+                        except nx.NetworkXNoPath as exc:
+                            msg = (
+                                "Your choice of terminal pairs locks in at least one terminal. "
+                                "Reconsider your choice of terminal pairs."
+                            )
+                            raise ValueError(
+                                msg
+                            ) from exc
+                        dist_factories.update({factory : path})
+                    #choose shortest factory path
+                    nearest_factory = min(dist_factories, key=lambda k: len(dist_factories[k]))
+                    paths.append(dist_factories[nearest_factory])
+            #for el in paths:
+            #    print(el)
+            #check the paths for overlaps
+            # Create a mapping of elements to the sublists they appear in
+            element_to_sublists = collections.defaultdict(set)
+            for i, sublist in enumerate(paths):
+                for element in sublist:
+                    element_to_sublists[element].add(i)
+            # Count crossings (pairwise sublist overlaps for each element)
+            crossing_count = 0
+            for sublists in element_to_sublists.values():
+                if len(sublists) > 1:
+                    crossing_count += len(list(itertools.combinations(sublists, 2)))
+            lst_crossings.append(crossing_count)
+        return lst_crossings
+
+    def split_layer_terminal_pairs(self) -> list[list[tuple[int, int] | tuple[tuple[int, int], tuple[int, int]]]]:
+        """Split Terminal Pairs into layers initially.
+
+        split up the terminal pairs into layers which can be 
+        compiled in parallel in principle because no qubits overlap
+        (can handle both pairs of qubits and single qubits)
+        """
+        layers = []
+        current_layer = [] 
+        used_qubits = set()  
+
+        for pair in self.terminal_pairs:
+            if isinstance(pair[0], tuple) and isinstance(pair[1], tuple):
+                if pair[0] in used_qubits or pair[1] in used_qubits:
+                    layers.append(current_layer)
+                    current_layer = [pair]
+                    used_qubits = set(pair)
+                else:
+                    current_layer.append(pair)
+                    used_qubits.update(pair)
+            elif isinstance(pair[0], int) and isinstance(pair[1], int):
+                if pair in used_qubits:
+                    layers.append(current_layer)
+                    current_layer = [pair]
+                    used_qubits = {pair}
+                else: 
+                    current_layer.append(pair)
+                    used_qubits.update([pair])
+            else:
+                msg = "Wrong elements in `terminal_pairs`."
+                raise TypeError(msg)
+
+        if current_layer:
+            layers.append(current_layer)
+
+        return layers
+    
+    def order_terminal_pairs(self, layer: int) -> None:
+        """Orders terminal pairs of a layer inplace.
+
+        order the terminal pairs s.t. the pairs
+        closest together are routed first (looks for shortest route to the factories if T gate)
+        adapts self.terminal_pairs in place
+        """
+        terminal_pair_dist = {}
+        for t_p in self.layers_cnot_t_orig[layer]:
+            g_temp = self.G.copy()
+            flattened_terminals_and_factories = self.flattened_terminals.copy() + self.factory_positions.copy()
+            if isinstance(t_p[0], tuple) and isinstance(t_p[1], tuple):
+                terminals_temp = [
+                    pair for pair in flattened_terminals_and_factories.copy()
+                    if pair != t_p[0] and pair != t_p[1]
+                ]
+                terminals_temp = list(set(terminals_temp))
+                g_temp.remove_nodes_from(terminals_temp)
+                try:
+                    path = nx.dijkstra_path(g_temp, t_p[0], t_p[1])
+                except nx.NetworkXNoPath as exc:
+                    msg = (
+                        "Your choice of terminal pairs locks in at least one terminal. "
+                        "Reconsider your choice of terminal pairs."
+                    )
+                    raise ValueError(
+                        msg
+                    ) from exc
+                terminal_pair_dist.update({t_p: len(path)-1}) #-1 because we want to count only what is between the terminals
+
+            elif isinstance(t_p[0], int) and isinstance(t_p[1], int):
+                dist_factories = {} #gather distances to each factory to greedily choose the shortest path
+                for factory in self.factory_positions:
+                    g_temp = self.G.copy()
+                    terminals_temp = [
+                        pair for pair in flattened_terminals_and_factories.copy()
+                        if pair not in {t_p, factory}
+                    ]
+                    terminals_temp = list(set(terminals_temp))
+                    g_temp.remove_nodes_from(terminals_temp)
+                    path = nx.dijkstra_path(g_temp, t_p, factory)
+                    dist_factories.update({factory : len(path)-1})
+                #choose shortest factory path
+                nearest_factory = min(dist_factories, key=dist_factories.get)
+                #add corresponding distance to terminal_pair_dist
+                terminal_pair_dist.update({t_p: dist_factories[nearest_factory]})
+
+            else:
+                msg = "Wrong elements in `terminal_pairs`."
+                raise TypeError(msg)
+            
+            #order the layer according to terminal_pair_dist
+            sorted_terminal_pairs = sorted(
+                terminal_pair_dist.keys(), key=lambda tp: terminal_pair_dist[tp]
+            )
+            self.layers_cnot_t_orig[layer] = sorted_terminal_pairs
+            self.layers_cnot_t[layer] = sorted_terminal_pairs
+            self.terminal_pair_dist = terminal_pair_dist
+            
+
+
+    def find_max_vdp_set(
+            self, layer: int
+    ) -> tuple[dict, list[tuple[tuple[int, int], tuple[int, int]]]]:
+        """Find largest VDP with shortest first.
+
+        iteratively applies dijkstra according to ordering from `order_terminal_pairs`.
+        for T gates, paths to all available factories are computed, shortest path is taken
+        factory is updated on waiting mode, according to self.t.
+
+        Returns:
+            dict: path per terminal pair
+            list[tuple[int,int]]: remaining terminal pairs which must be placed
+                in a new layer
+        """
+        vdp_dict = {}
+        terminal_pairs_remainder = []
+        successful_terminals = []  # gather successful terminal pairs
+        flag_problem = False
+        g_temp = self.G.copy()
+        dct_qubits = {} #a dct which checks whether a qubit was already used in the layer
+        terminal_pairs_orig_current = self.layers_cnot_t_orig[layer].copy()
+        terminal_pairs_current = self.layers_cnot_t[layer].copy()
+        flattened_terminals = [
+            pair
+            for item in terminal_pairs_orig_current
+            for pair in (item if isinstance(item[0], tuple) else [item])
+        ]
+        for t in flattened_terminals:
+            dct_qubits.update({t: False})
+        dct_qubits_copy = dct_qubits.copy()
+        flattened_terminals_and_factories = self.flattened_terminals.copy() + self.factory_positions.copy()
+        for t_p in terminal_pairs_current:
+            print(f"==========t_p = {t_p}============")
+            g_temp_temp = g_temp.copy()
+            if isinstance(t_p[0], tuple) and isinstance(t_p[1], tuple):
+                if dct_qubits[t_p[0]] or dct_qubits[t_p[1]]:
+                    flag_problem = True
+                    break
+                terminals_temp = [
+                    pair for pair in flattened_terminals_and_factories.copy()
+                    if pair != t_p[0] and pair != t_p[1]
+                ]
+                terminals_temp = list(set(terminals_temp))
+                g_temp_temp.remove_nodes_from(terminals_temp)
+                # find shortest path of t_p
+                try:
+                    path = nx.dijkstra_path(g_temp_temp, t_p[0], t_p[1])
+                except nx.NetworkXNoPath:
+                    # if no path could be found: stop and return remaining,
+                    # unallocated terminal pairs as well
+                    flag_problem = True
+                    # break
+                # update already used qubits
+                dct_qubits[t_p[0]] = True
+                dct_qubits[t_p[1]] = True
+
+            elif isinstance(t_p[0], int) and isinstance(t_p[1], int):
+                if dct_qubits[t_p]:
+                    flag_problem = True
+                    break
+                dist_factories = {}
+                for factory in self.factory_positions:
+                    g_temp_temp = g_temp.copy()
+                    print("factory: ", factory, "time", self.factory_times[factory])
+                    if self.factory_times[factory] == 0: #only include available factories
+                        print("factory time is fine")
+                        #remove other terminals
+                        terminals_temp = [
+                            pair for pair in flattened_terminals_and_factories.copy()
+                            if pair not in {t_p, factory}
+                        ]
+                        terminals_temp = list(set(terminals_temp))
+                        g_temp_temp.remove_nodes_from(terminals_temp)
+                        try:
+                            path = nx.dijkstra_path(g_temp_temp, t_p, factory)
+                        except nx.NetworkXNoPath:
+                            print("no path found")
+                            continue
+                        dist_factories.update({factory: path})
+                print("=======dist_factories==========", dist_factories)
+                #choose shortest available path or if no elements in dist_factories, flag_problem = True
+                if len(dist_factories) == 0:
+                    print("no available factories")
+                    flag_problem = True
+                else:
+                    nearest_factory = min(dist_factories, key=lambda k: len(dist_factories[k]))
+                    print("nearest factory", nearest_factory)
+                    path = dist_factories[nearest_factory]
+                    dct_qubits[t_p] = True
+                    self.factory_times[nearest_factory] = self.t #reset time
+        
+            else:
+                msg = "Wrong elements in `terminal_pairs`."
+                raise TypeError(msg)
+            
+            if flag_problem:
+                terminal_pairs_remainder = [
+                    s
+                    for s in terminal_pairs_current
+                    if s not in successful_terminals
+                ]
+                dct_qubits = dct_qubits_copy.copy()
+            else: #if no problem
+                for node in path[1:-1]:
+                    g_temp.remove_node(node)
+                successful_terminals.append(t_p)
+                vdp_dict.update({t_p: path})
+
+        return vdp_dict, terminal_pairs_remainder
+    
+    def find_all_vdp_layers(self, layer: int) -> list[dict]:
+        """Find VDP layers within a given initial layer.
+
+        if find_max_VDP_set returns nonzero terminal_pairs_remainder
+        it is required to run the algorithm as long s.t. we find all VDP
+        sets even if they are in multiple layers
+        Important: Adapt time stampes of the factories.
+
+        Returns:
+            list[dict]: list of layers with simultaneous paths (VDP per layer)
+        """
+        # ! TODO One should actually check whether a remainder might be able to be merged with a new layer after having to split up. sometimes the remainder does not overlap with qubits in the next layer
+        flag_continue = True
+        vdp_layers = []
+        while flag_continue:
+            vdp_dict, terminal_pairs_remainder = self.find_max_vdp_set(layer)
+            vdp_layers.append(vdp_dict)
+            #adapt times
+            for key in self.factory_times:
+                if self.factory_times[key] != 0:
+                    self.factory_times[key] -= 1 
+            if len(terminal_pairs_remainder) == 0:
+                flag_continue = False
+                break
+            self.layers_cnot_t[layer] = terminal_pairs_remainder
+
+        return vdp_layers
+    
+    def find_total_vdp_layers(self) -> list[dict]:
+        """Find all routes for all initial and secondary layers.
+
+        finds total VDP layers, i.e. more than `all` meaning that 
+        it also respects the initial layer structure of the cnots
+
+        Important: Adapt time stampes of the factories.
+        """
+        vdp_layers = []
+        for layer in range(len(self.layers_cnot_t_orig)):
+            self.order_terminal_pairs(layer)
+            vdp_layers_temp = self.find_all_vdp_layers(layer)
+            vdp_layers += vdp_layers_temp
+        return vdp_layers
+    
+
+def plot_lattice_paths(
+        g: nx.Graph,
+        vdp_dict: dict, 
+        layout: dict | None = None, 
+        factory_locs: list[tuple[int,int]] | None = None,
+        size: tuple[float,float] = (3.5,3.5)) -> None:
+    """Plots the graph and the corresponding VDP of a layer.
+
+    Args:
+        g (nx.Graph): Graph on which we route
+        vdp_dict (dict): Output of router.find_total_vdp_layers
+        layer (int): label of layer to plot
+        layout (dict): potentially also display the qubit labels. keys = qubit label, value = node label
+        factory_locs (list[tuple[int,int]] | None): factory locations.
+        size (tuple[float,float], optional): _description_. Size of the plot. Defaults to (3.5,3.5).
+    """
+    if layout is None:
+        layout = {}
+    if factory_locs is None:
+        factory_locs = []
+    pos = nx.get_node_attributes(g, "pos")
+
+    num_paths = len(vdp_dict.keys())
+    colormap = plt.cm.get_cmap("rainbow", num_paths)
+    colors = [mcolors.to_hex(colormap(i)) for i in range(num_paths)]
+
+    plt.figure(figsize=size)
+    nx.draw(g, pos,
+            with_labels=True,
+            node_color="gray",
+            edge_color="lightblue",
+            font_size = 8)
+
+    for i, path in enumerate(vdp_dict.values()):
+        if path:
+            path_edges = [
+                (path[j], path[j + 1]) for j in range(len(path) - 1)
+            ]
+            nx.draw_networkx_edges(
+                g,
+                pos,
+                edgelist=path_edges,
+                width=2,
+                edge_color=colors[i]
+            )
+            nx.draw_networkx_nodes(
+                g,
+                pos,
+                nodelist=path,
+                node_color=colors[i],
+                label=f"Path {i + 1}"
+            )
+
+    if len(factory_locs) != 0:
+        nx.draw_networkx_nodes(
+            g,
+            pos,
+            nodelist=factory_locs,
+            node_color="violet",
+        )
+
+    if len(list(layout.keys())) != 0:
+        for key, value in layout.items():
+            node_pos = pos[value]
+            plt.text(node_pos[0], node_pos[1] - 0.1, str(key), 
+                    fontsize=8, color="white", horizontalalignment="center")
+            #also highlight data qubits
+            nx.draw_networkx_nodes(
+                g, 
+                pos, 
+                nodelist=layout.values(),  # Nodes to highlight
+                node_color="none",  # Unfilled circles
+                edgecolors="lime",  # Neon green outline
+                linewidths=1.5  # Line width for the outline
+            )
+
+    plt.legend()
+    plt.show()
