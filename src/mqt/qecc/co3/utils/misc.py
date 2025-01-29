@@ -4,33 +4,60 @@ from __future__ import annotations
 import random
 
 
-def generate_random_circuit(q: int, min_depth: int) -> list[tuple[int, int]]:
-    """Random CNOT Pairs.
+def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: float = 0.5) -> list[tuple[int, int] | int]:
+    """Random CNOT Pairs. Optional: random T gates.
     
     makes it deep enough that each qubit is used at least once
     min_depth is the minimum number of cnots
     circuit = set of terminal pairs
+    the labeling does not yet follow the labels of a networkx.Graph but only range(q).
+
+    Args:
+        q (int): number of qubits of the circuit
+        min_depth (int): minimal number of gates
+        tgate (bool, optional): whether t gates are included or not Defaults to False.
+        ratio (float, optional): ratio between t gates and cnots. 
+            more t gates if smaller than 0.5. 
+            note that the ratio is not deterministically fixed, only determines probabilities.
+            Defaults to 0.5.
+
+    Raises:
+        ValueError: _description_
+
+    Returns:
+        list[tuple[int, int]]: _description_
     """
     if q < 2:
         msg = "q must be at least 2 to form pairs."
         raise ValueError(msg)
 
-    pairs = []
+    pairs = [] #cnot pairs and t single qubit gate labels
     covered_elements = set()  # Keep track of elements that have appeared in a pair
     
     while len(covered_elements) < q or len(pairs) < min_depth:
-        a, b = random.sample(range(q), 2)
-        pair = (a, b)
+        t = random.random() if tgate else 0
+        if t <= ratio: 
+            a, b = random.sample(range(q), 2)
+            pair = (a, b)
 
-        pairs.append(pair)
+            pairs.append(pair)
 
-        covered_elements.update(pair)
+            covered_elements.update(pair)
+        elif t != 1 and ratio < t <= 1:
+            i = random.randrange(q)
+            pairs.append(i)
+            covered_elements.add(i)
 
     return pairs
 
-def translate_layout_circuit(pairs: list[tuple[int, int]], layout: dict) -> list[tuple[tuple[int, int]]]:
-    """Translates a `pairs` circuit (with int labels) into the lattice's labels for a given layout."""
-    return [(layout[pair[0]], layout[pair[1]]) for pair in pairs]
+def translate_layout_circuit(pairs: list[tuple[int, int] | int], layout: dict) -> list[tuple[tuple[int, int]] | tuple[int,int]]:
+    """Translates a `pairs` circuit (with int labels) into the lattice's labels for a given layout.
+    
+    However, pairs does not only include tuple[int,int] but can include int as well for T gates. Then, layout will also include
+    a lsit of factory positions in the key="factory_positions". but this will be ignored for this
+    """
+    #return [(layout[pair[0]], layout[pair[1]]) for pair in pairs]
+    return [(layout[pair[0]], layout[pair[1]]) if isinstance(pair, tuple) else layout[pair] for pair in pairs]
 
 """
 def brute_force_qubit_assignments(data_qubit_locs: list[tuple[int, int]], num: int) -> list[dict]:

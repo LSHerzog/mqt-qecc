@@ -154,11 +154,16 @@ class HexagonalLattice:
         Returns:
             list[tuple[int, int]]: Locations on the graph for data qubits (no qubit labels assigned yet)
         """
+        min_x = 1
+        max_x = self.n + 1
+        min_y = 2
+        max_y = self.m * 2
+
         data_qubit_locs = [] # start with (x,y) = 1,2
-        for y in np.arange(2, self.m * 2 + 1, 4):
+        for y in np.arange(min_y, max_y, 4):
             flag_x1 = True
             flag_x2 = True
-            for x in range(1, self.n + 1):
+            for x in range(min_x, max_x):
                 if (x, y + 1) not in list(self.G.nodes) or (x, y + 2) not in list(self.G.nodes):
                     break
                 if (x + 1, y) in list(self.G.nodes):
@@ -580,9 +585,12 @@ class ShortestFirstRouterTGates(HexagonalLattice):
         self.layers_cnot_t = self.split_layer_terminal_pairs()
         self.layers_cnot_t_orig = self.layers_cnot_t.copy()
 
-    def count_crossings_per_layer(self) -> list[int]:
+    def count_crossings_per_layer(self, t_crossings: bool = False) -> list[int]:
         """Counts the crossings of the simple paths between cnots and between shortest factory to qubit path (respecting terminals and factory positions) per layer.
 
+        Args:
+            t_crossings (bool): decides whether the crossings to the factory are included (true) or not (false).
+        
         Returns:
             list[int]: Number of crossings per initial layer. len is len(self.layers_cnot_t_orig)
         """
@@ -611,7 +619,8 @@ class ShortestFirstRouterTGates(HexagonalLattice):
                         raise ValueError(
                             msg
                         ) from exc
-                elif isinstance(t_p[0], int) and isinstance(t_p[1], int):
+    
+                elif isinstance(t_p[0], int) and isinstance(t_p[1], int) and t_crossings:
                     dist_factories = {} #gather distances to each factory to greedily choose the shortest path
                     for factory in self.factory_positions:
                         g_temp = self.G.copy()
@@ -781,7 +790,7 @@ class ShortestFirstRouterTGates(HexagonalLattice):
         dct_qubits_copy = dct_qubits.copy()
         flattened_terminals_and_factories = self.flattened_terminals.copy() + self.factory_positions.copy()
         for t_p in terminal_pairs_current:
-            print(f"==========t_p = {t_p}============")
+            #print(f"==========t_p = {t_p}============")
             g_temp_temp = g_temp.copy()
             if isinstance(t_p[0], tuple) and isinstance(t_p[1], tuple):
                 if dct_qubits[t_p[0]] or dct_qubits[t_p[1]]:
@@ -812,9 +821,9 @@ class ShortestFirstRouterTGates(HexagonalLattice):
                 dist_factories = {}
                 for factory in self.factory_positions:
                     g_temp_temp = g_temp.copy()
-                    print("factory: ", factory, "time", self.factory_times[factory])
+                    #print("factory: ", factory, "time", self.factory_times[factory])
                     if self.factory_times[factory] == 0: #only include available factories
-                        print("factory time is fine")
+                        #print("factory time is fine")
                         #remove other terminals
                         terminals_temp = [
                             pair for pair in flattened_terminals_and_factories.copy()
@@ -825,17 +834,17 @@ class ShortestFirstRouterTGates(HexagonalLattice):
                         try:
                             path = nx.dijkstra_path(g_temp_temp, t_p, factory)
                         except nx.NetworkXNoPath:
-                            print("no path found")
+                            #print("no path found")
                             continue
                         dist_factories.update({factory: path})
-                print("=======dist_factories==========", dist_factories)
+                #print("=======dist_factories==========", dist_factories)
                 #choose shortest available path or if no elements in dist_factories, flag_problem = True
                 if len(dist_factories) == 0:
-                    print("no available factories")
+                    #print("no available factories")
                     flag_problem = True
                 else:
                     nearest_factory = min(dist_factories, key=lambda k: len(dist_factories[k]))
-                    print("nearest factory", nearest_factory)
+                    #print("nearest factory", nearest_factory)
                     path = dist_factories[nearest_factory]
                     dct_qubits[t_p] = True
                     self.factory_times[nearest_factory] = self.t #reset time

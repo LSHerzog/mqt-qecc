@@ -13,7 +13,7 @@ import numpy as np
 from matplotlib.cm import rainbow
 from tqdm import tqdm
 
-from .lattice_router import HexagonalLattice, ShortestFirstRouter
+from .lattice_router import HexagonalLattice, ShortestFirstRouter, ShortestFirstRouterTGates
 from .misc import translate_layout_circuit
 
 
@@ -28,11 +28,16 @@ class HillClimbing:
             self, 
             max_restarts: int, 
             max_iterations: int, 
-            circuit: list[tuple[int,int]], 
+            circuit: list[tuple[int,int] | int], 
             layout_type: str, 
             m:int, 
             n:int, 
-            metric: str
+            metric: str,
+            possible_factory_positions: list[tuple[int,int]] | None = None,
+            num_factories: int | None = None,
+            free_rows : list[str] | None = None,
+            t : int | None = None,
+            optimize_factories : bool = False
         ) -> None:
         """Initializes the Hill Climbing with Random Restarts algorithm.
 
@@ -44,10 +49,26 @@ class HillClimbing:
             m (int): number of rows of hexagons in the lattice
             n (int): number of columns of hexagons in the lattices
             metric (str): "crossing", "routing", "distance"
-
+            possible_factory_positions (list[tuple[int,int]] | None): possible locations for the factories (must follow nx labeling of hex. lattice and must be placed outside the generated layout)
+            num_factories (int | None): Number of factories to be used (subset of possible_factory_positions).
+            free_rows (list[str] | None): Adds one or more rows to lattice, either top or right (easier to implement than also adding bottom, left). Defaults to None.
+            t (int): waiting time for factories. Defaults to None
+            optimize_factories (int): decides whether factories are optimized or not. Defaults to false.
         Raises:
             ValueError: _description_
         """
+        #if circuit includes also single ints (i.e. T gates on qubit i), then ensure, that possible_factory_positions and num_factories are not None
+        if any(type(el) is int for el in circuit):
+            assert possible_factory_positions is not None, "If T gates included in circuit, `possible_factory_positions` must NOT be None."
+            assert num_factories is not None, "If T gates included in circuit, `num_factories` must NOT be None."
+            assert t is not None, "If T gates included in circuit, `num_factories` must NOT be None."
+            assert len(possible_factory_positions) > num_factories, "`possible_factory_positions` must have more elements than `num_factories`."
+        else:
+            assert optimize_factories is False, "If no T gates present, optimize_factories must be false."
+        self.possible_factory_positions = possible_factory_positions
+        self.num_factories = num_factories
+        self.optimize_factories = optimize_factories
+        self.t = t
         self.m = m
         self.n = n
         self.max_restarts = max_restarts
@@ -68,22 +89,52 @@ class HillClimbing:
         assert metric in {"crossing", "routing", "distance"}
         self.metric = metric
         self.circuit = circuit
-        flattened_qubit_labels = [num for tup in self.circuit for num in tup]
+        if any(type(el) is int for el in circuit):
+            flattened_qubit_labels = [num for tup in self.circuit for num in (tup if isinstance(tup, tuple) else (tup,))]
+        else:
+            flattened_qubit_labels = [num for tup in self.circuit for num in tup]
         self.q = max(flattened_qubit_labels)+1
         if self.q < len(self.data_qubit_locs):
             self.data_qubit_locs = self.data_qubit_locs[:self.q] #cut-off unneccessary qubit spots.
         assert len(list(set(flattened_qubit_labels))) == self.q, "The available qubits must allow a continuous labeling."
         assert len(data_qubit_locs)>=self.q, "The lattice must be able to host the number of qubits given in the circuit"
+        if possible_factory_positions is not None:
+            assert set(data_qubit_locs) & set(possible_factory_positions) == set(), "The factory possitions are not allowed to intersect with the logical data qubit locations."
+        
+        valid_values = {"right", "top"}
+        if free_rows is not None:
+            assert set(free_rows) == set(free_rows) & valid_values, "free_rows must only contain 'right' or 'top' and no duplicates."
+            #increase the lattice size
+            if "right" in free_rows and "top" not in free_rows:
+                self.n += 1
+            elif "right" not in free_rows and "top" in free_rows:
+                self.m += 1
+            elif "right" in free_rows and "top" in free_rows:
+                self.n += 1
+                self.m += 1
+        self.free_rows = free_rows
+
 
     def evaluate_solution(self, layout: dict) -> int:
         """Evaluates the layout=solution according to self.metric."""
         terminal_pairs = translate_layout_circuit(self.circuit, layout)
-        router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
+        factory_positions = layout["factory_positions"]
+        if any(type(el) is int for el in self.circuit):
+            router = ShortestFirstRouterTGates(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
+        else:
+            router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
         if self.metric == "crossing":
-            cost = np.sum(router.count_crossings_per_layer())
+            if self.optimize_factories and any(type(el) is int for el in self.circuit):
+                cost = np.sum(router.count_crossings_per_layer(t_crossings = True))
+            elif self.optimize_factories is False and any(type(el) is int for el in self.circuit):
+                cost = np.sum(router.count_crossings_per_layer(t_crossings = False))
+            else:
+                cost = np.sum(router.count_crossings_per_layer())
         elif self.metric == "distance":
             distances = router.measure_terminal_pair_distances()
             cost = np.sum(distances)
+            if any(type(el) is int for el in self.circuit):
+                raise NotImplementedError
         elif self.metric == "routing":
             vdp_layers = router.find_total_vdp_layers()
             cost = len(vdp_layers)
@@ -95,12 +146,25 @@ class HillClimbing:
         perm = list(range(self.q))
         random.shuffle(perm)
         for i,j in zip(perm, self.data_qubit_locs):
-            layout.update({i: j})
+            layout.update({i: (int(j[0]), int(j[1]))}) #otherwise might be np.int64
+        
+        #Add generation of random choice of factory positions
+        factory_positions = []
+        if any(type(el) is int for el in self.circuit):
+            factory_positions = random.sample(self.possible_factory_positions, self.num_factories)
+        layout.update({"factory_positions": factory_positions})
+
         return layout
     
     def gen_neighborhood(self, layout: dict) -> list[dict]:
         """Creates the Neighborhood of a given layout by going through each terminal pair and swapping their positions.
-
+        
+        If there are no T gates, there will be l=len(terminal_pairs) elements in the neighborhood.
+        In the presence of t gates, there will b l*k*(n-k) elements in the neighborhood, where n = len(possible_factory_positions) and k = num_factories.
+        For the CNOTs, each element swaps the qubit locations of one CNOT pair -> l elements
+        Including the factories, each neighbor places one occupied factory spot to another, hence k(n-k).
+        In total, multiplication between both schemes, thus l*k*(n-k).
+        
         Args:
             layout (dict): qubit label assignment on the lattice. keys = qubit label, value = node label
 
@@ -109,14 +173,29 @@ class HillClimbing:
         """
         neighborhood = []
         for pair in self.circuit:
-            layout_copy = layout.copy()
-            #intermediate storage of the nodes 
-            q_0_pos = layout_copy[pair[0]]
-            q_1_pos = layout_copy[pair[1]]
-            #swap
-            layout_copy[pair[1]] = q_0_pos
-            layout_copy[pair[0]] = q_1_pos
-            neighborhood.append(layout_copy)
+            if isinstance(pair, tuple): #only for cnots
+                layout_copy = layout.copy()
+                #intermediate storage of the nodes 
+                q_0_pos = layout_copy[pair[0]]
+                q_1_pos = layout_copy[pair[1]]
+                #swap
+                layout_copy[pair[1]] = q_0_pos
+                layout_copy[pair[0]] = q_1_pos
+                
+                if any(type(el) is int for el in self.circuit) and self.optimize_factories: #if T gates present
+                    #adapt the layout["factory_positions"]. 
+                    current = layout_copy["factory_positions"].copy()
+                    complement = [el for el in self.possible_factory_positions if el not in current] #all positions from possible positions which are not in factoy_positions
+                    for el in current:
+                        current_copy = current.copy()
+                        current_copy.remove(el) #remove el from current_copy
+                        for el_c in complement:
+                            current_copy_copy = current_copy.copy()
+                            current_copy_copy.append(el_c)
+                            layout_copy["factory_positions"] = current_copy_copy.copy()
+                            neighborhood.append(layout_copy.copy())
+                else:
+                    neighborhood.append(layout_copy.copy())
 
         return neighborhood
 
