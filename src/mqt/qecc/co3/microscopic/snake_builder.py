@@ -10,8 +10,240 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 
 
+class SnakeBuilderSTDW:
+    """Constructs a n-snake of distance d color codes with semi transparent domain wall."""
+    def __init__(
+            self,
+            g: nx.Graph,
+            positions: list[list[tuple[int,int]]],
+            d: int 
+    ) -> None:
+        """Initializes a n snake with ancillas on the interface and semi transparent domain wall.
+
+        Args:
+            g (nx.Graph): Hexagonal graph on which the data qubits are placed
+            positions (list[tuple[int,int]]): vertex positions on the nx graph (tuples) for each triangular color code patch  
+                The order of the triangles is important, as subsequent triangle lists shoudl belong to neighboring triangles.
+            d (int): distance of the triangular color code patches
+        """
+        self.g = g
+        self.positions = positions
+        self.d = d
+
+        #determine global labeling for all vertices in the n-snake
+        all_pos = []
+        for tile in self.positions:
+            all_pos += tile
+        labels = {}
+        for i, pos in enumerate(all_pos):
+            labels.update({pos : i})
+        self.labels = labels
+
+        #assertions for q(d) per triangle and p(d)=(q(d)-1)/2 per triangle (number of patches) 
+        t = (d-1)/2
+        q = int(3*t**2 + 3*t + 1)
+        for i, triangle in enumerate(self.positions):
+            assert len(triangle) == q, f"Your set of vertices for triangle {i} does not fit the expected number of qubits for distance d={d}."
+        p = int((q-1)/2)
+        self.q = q
+        self.p = p
+        self.n = len(positions)
+        self.q_tilde = self.n * self.q + (self.n - 1) * (self.d - 1)
+
+    def find_triangle_edges_corners(self, n_triangle: int) -> list[list[tuple[int,int]]]:
+        """Searches for the graph labels of the vertices in the 3 edges of the given triangle.
+
+        Args:
+            n_triangle (int): label of triangle in self.positions
+
+        Returns:
+            list[list[tuple[int,int]]]: list of three edges
+        """
+        triangle = self.positions[n_triangle]
+        lst_boundary = [] #gather all vertices with a single neighbor outside the set (i.e. on edge)
+        lst_corner = [] # gather all 3 vertices with 2 neighbors outside the set (i.e. corners of triangle)
+        for vertex in triangle:
+            neighbors_temp = list(self.g.neighbors(vertex))
+            outside_neighbors = [v for v in neighbors_temp if v not in triangle]
+            if len(outside_neighbors) == 2:
+                lst_corner.append(vertex)
+            elif len(outside_neighbors) == 1:
+                lst_boundary.append(vertex)
+            elif len(outside_neighbors) == 0:
+                continue
+            elif len(outside_neighbors) == 2:
+                msg = f"There is an isolated qubit in your input triangle {n_triangle}."
+                raise ValueError(msg)
+        
+        assert len(lst_corner) == 3, "Something weird happened."
+        assert len(lst_boundary) == (self.d-2)*3, "Something weird happened."
+
+        return [lst_corner, lst_boundary]
+    
+    def find_interface_ancillas(self, triangle_0: int, triangle_1: int) -> list[tuple]:
+        """Finds ancilla vertices on the interface between triangle_0 and triangle_1.
+
+        Args:
+            triangle_0 (int): label of first triangle in self.positions[triangle_0]
+            triangle_1 (int): label of second triangle in self.positions[triangle_1] -> must be adjacent to the first!
+
+        Returns:
+            list[tuple] pair of ancilla locations which are in the interface.
+        """
+        [lst_corner_0, lst_boundary_0] = self.find_triangle_edges_corners(triangle_0)
+        [lst_corner_1, lst_boundary_1] = self.find_triangle_edges_corners(triangle_1)
+
+        #find pairs of elements which are next nearest neighbors.
+        next_nearest_neighbors = []
+        for el0 in lst_corner_0:
+            for el1 in lst_corner_1:
+                path = nx.dijkstra_path(self.g, el0, el1)
+                if len(path)-1 == 2:
+                    next_nearest_neighbors.append({"el0": el0, "el1": el1, "path": path})
+        for el0 in lst_boundary_0:
+            for el1 in lst_boundary_1:
+                path = nx.dijkstra_path(self.g, el0, el1)
+                if len(path)-1 == 2:
+                    next_nearest_neighbors.append({"el0": el0, "el1": el1, "path": path})
+
+        #filter ancillas
+        ancillas = [el["path"][1] for el in next_nearest_neighbors]
+        
+        #only use those ancillas which do indeed have a nearest neighbor in the ancilla set (single ancillas not wanted)
+        ancilla_pairs = []
+        for node in ancillas:
+            neighbors = set(self.g.neighbors(node))
+            valid_neighbors = neighbors.intersection(ancillas)
+            if valid_neighbors:
+                # Ensure unique pairs, avoid (n1, n2) and (n2, n1)
+                ancilla_pairs.extend((node, neighbor) for neighbor in valid_neighbors if node < neighbor)
+
+        return ancilla_pairs
+    
+    def hex_plaquettes(self) -> list:
+        """Find all hexagonal plaquettes on original g.
+
+        Returns:
+            list: all possible hexagonal plaquettes as vertices on g.
+        """
+        cycles = list(nx.simple_cycles(self.g, length_bound = 6))
+        return [set(cycle) for cycle in cycles if len(cycle) == 6]
+
+    def find_stabilizers(self) -> tuple[list,list]:
+        """Find stabilizers on self.positions.
+        
+        Returns:
+            tuple[list, list]: Two lists, first the Z stabilizrs, and second the X stabilizers. There are more Z than X stabilizers
+            because we assume a Z merge by default. but can be interchanged of course for a X merge.
+        """ 
+        total_nodes = [] #find all relevant nodes first
+        z_plaquettes = []
+        
+        for triangle in self.positions: #all nodes in the triangles
+            total_nodes += triangle
+
+        for i in range(len(self.positions) - 1): # everything in the interface
+            ancilla_pairs = self.find_interface_ancillas(i, i+1)
+            z_plaquettes += ancilla_pairs#pair stabs
+            ancillas_flattened = [item for sublist in ancilla_pairs for item in sublist]
+            total_nodes += ancillas_flattened
+            
+        #structure the nodes as intersection to the underlying hexagonal plaquettes (automatically other shape in interface)
+        hexagonal_plaquettes = self.hex_plaquettes()
+        for plaquette in hexagonal_plaquettes:
+            overlap = set(plaquette) & set(total_nodes)
+            if len(overlap) >= 3:  # Ensure a meaningful plaquette (full or partial)
+                z_plaquettes.append(overlap)
+        
+        #filter out interface only plaquettes to distinguish x_plaquettes and z_plaquettes
+        x_plaquettes = []
+        for plaquette in z_plaquettes:
+            if len(plaquette) == 6: #pairs, weight-3, weight-5 in the interface NOT wanted for X stabs
+                #also remove the hex plaquettes within the interface (touching vertices of two triangles)
+                bools = []
+                for i in range(len(self.positions) - 1):
+                    if set(plaquette) & set(self.positions[i]) and set(plaquette) & set(self.positions[i+1]):
+                        bools.append(False)
+                    else:
+                        bools.append(True)
+                if all(bools):
+                    x_plaquettes.append(plaquette) #only if above NOT fulfilled
+            elif len(plaquette) == 4:
+                x_plaquettes.append(plaquette)
+
+        self.total_nodes = total_nodes
+        # build in assertion regarding number of each stabilizers, i have equations to check whether the number is right.
+        assert len(x_plaquettes) == self.n * self.p, "Your number of final x_plaquettes is wrong, maybe weird input?"
+        assert len(z_plaquettes) == self.n * self.p + self.d*(self.n - 1), "Your number of final z_plaquettes is wrong, maybe weird input?"
+        
+        return z_plaquettes, x_plaquettes
+    
+    def integer_labeling(self) -> None:
+        """Finds a random integer labeling. Only works after having run find_stabilizers."""
+        trans_dict = {}
+        for i, node in enumerate(self.total_nodes):
+            trans_dict.update({node: i})
+        self.trans_dict = trans_dict
+    
+    def plot_stabilizers(self, plaquettes: list, size: tuple[int, int] = (7, 7)) -> None:
+        """Plots the stabilizers, either z_plaquettes or x_plaquettes."""
+        pos = nx.get_node_attributes(self.g, "pos")
+        plt.figure(figsize=size)
+        nx.draw(self.g, pos, with_labels=True, font_size=8, node_color="lightgray", edge_color="lightblue")
+
+        #integer labels
+        self.integer_labeling()
+        for original_label, new_label in self.trans_dict.items():
+            if original_label in pos:  # Ensure the node exists in the graph
+                x, y = pos[original_label]
+                plt.text(
+                    x, y + 0.2, str(new_label), fontsize=8,
+                    color="blue", ha="center", va="center"
+                )
+
+        #outline of the triangles
+        for i in range(len(self.positions)):
+            [lst_corner, _] = self.find_triangle_edges_corners(i)
+            #plot three connection lines
+            triangle_pos = [pos[node] for node in lst_corner]
+            x_coords, y_coords = zip(*triangle_pos)
+            plt.plot(
+                (*x_coords, x_coords[0]),  # Close the triangle
+                (*y_coords, y_coords[0]),  
+                linewidth=3, color="black", alpha=0.5  # Thick and semi-transparent
+            )
+
+
+        colors = plt.cm.rainbow(np.linspace(0, 1, len(plaquettes)))
+        for idx, face in enumerate(plaquettes):
+            # Get the positions for the vertices in the face
+            face_positions = [pos[node] for node in face]
+            
+            if len(face_positions) == 2:
+                v1, v2 = face_positions[0], face_positions[1]
+                line = Line2D([v1[0], v2[0]], [v1[1], v2[1]], color=colors[idx], lw=4)  # 'lw' is line width
+                plt.gca().add_line(line)
+            else:
+                face_positions = convex_hull(face_positions)
+                polygon = Polygon(face_positions, closed=True, edgecolor="blue", facecolor=colors[idx], alpha=0.6)
+                plt.gca().add_patch(polygon)
+
+        plt.show()
+        # !todo store also the pdf of the figure in a given path.
+
+    def gen_check_matrix(self, plaquettes: list) -> list:
+        """Takes plaquettes and translates with self.integer_labeling."""
+        self.integer_labeling()
+        h = np.zeros((len(plaquettes), self.q_tilde), dtype=int)
+        for row, plaquette in enumerate(plaquettes):
+            translated_plaquette = [int(self.trans_dict[node]) for node in plaquette]
+            for el in translated_plaquette:
+                h[row, el] = 1
+        return h
+
+
 class SnakeBuilder:
-    """Constructs a snake with n Steane patches on specified vertices in G."""
+    """Constructs a snake with n Steane patches on specified vertices in G. Without ancillas in the interface."""
     def __init__(
             self,
             g: nx.Graph,
