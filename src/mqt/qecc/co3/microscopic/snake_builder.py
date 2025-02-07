@@ -49,6 +49,7 @@ class SnakeBuilderSTDW:
         self.p = p
         self.n = len(positions)
         self.q_tilde = self.n * self.q + (self.n - 1) * (self.d - 1)
+        self.trans_dict = None
 
     def find_triangle_edges_corners(self, n_triangle: int) -> list[list[tuple[int,int]]]:
         """Searches for the graph labels of the vertices in the 3 edges of the given triangle.
@@ -71,12 +72,11 @@ class SnakeBuilderSTDW:
                 lst_boundary.append(vertex)
             elif len(outside_neighbors) == 0:
                 continue
-            elif len(outside_neighbors) == 2:
+            elif len(outside_neighbors) == 3:
                 msg = f"There is an isolated qubit in your input triangle {n_triangle}."
                 raise ValueError(msg)
-        
-        assert len(lst_corner) == 3, "Something weird happened."
-        assert len(lst_boundary) == (self.d-2)*3, "Something weird happened."
+        assert len(lst_corner) == 3, f"Something weird happened. lst_corner has {len(lst_corner)} elements instead of 3."
+        assert len(lst_boundary) == (self.d-2)*3, f"Something weird happened. lst_boundary has {len(lst_boundary)} elements instead of {(self.d-2)*3}."
 
         return [lst_corner, lst_boundary]
     
@@ -178,6 +178,25 @@ class SnakeBuilderSTDW:
         
         return z_plaquettes, x_plaquettes
     
+    def find_separate_stabilizers(self, n_triangle: int) -> list:
+        """Generates the stabilizers of a plain triangular color code. Not including the interface.
+
+        Args:
+            n_triangle (int): index of triangular patch of interest.
+
+        Returns:
+            list: stabilizers of the code (both x and z stabilizers because self-dual)
+        """
+        plaquettes = []
+        hexagonal_plaquettes = self.hex_plaquettes()
+        for plaquette in hexagonal_plaquettes:
+            overlap = set(plaquette) & set(self.positions[n_triangle])
+            if len(overlap) >= 3:  # Ensure a meaningful plaquette (full or partial)
+                plaquettes.append(overlap)
+
+        assert len(plaquettes) == self.p, "Your number of final triangular color code plaquettes is wrong."
+        return plaquettes    
+
     def integer_labeling(self) -> None:
         """Finds a random integer labeling. Only works after having run find_stabilizers."""
         trans_dict = {}
@@ -192,7 +211,8 @@ class SnakeBuilderSTDW:
         nx.draw(self.g, pos, with_labels=True, font_size=8, node_color="lightgray", edge_color="lightblue")
 
         #integer labels
-        self.integer_labeling()
+        if self.trans_dict is None:
+            self.integer_labeling()
         for original_label, new_label in self.trans_dict.items():
             if original_label in pos:  # Ensure the node exists in the graph
                 x, y = pos[original_label]
