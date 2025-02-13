@@ -38,7 +38,8 @@ class HillClimbing:
             num_factories: int | None = None,
             free_rows : list[str] | None = None,
             t : int | None = None,
-            optimize_factories : bool = False
+            optimize_factories : bool = False,
+            custom_layout: list[list, nx.Graph] | None = None
         ) -> None:
         """Initializes the Hill Climbing with Random Restarts algorithm.
 
@@ -46,7 +47,7 @@ class HillClimbing:
             max_restarts (int): Maximum number of random restarts.
             max_iterations (int): Maximum number of iterations per restart.
             circuit (list[tuple[int,int]]): list of qubits to connect (terminal pairs aka cnots) 
-            layout_type (str): (row, sparse, pair, hex)
+            layout_type (str): (row, sparse, pair, hex, custom)
             m (int): number of rows of hexagons in the lattice
             n (int): number of columns of hexagons in the lattices
             metric (str): "crossing", "routing", "distance"
@@ -56,6 +57,9 @@ class HillClimbing:
             free_rows (list[str] | None): Adds one or more rows to lattice, either top or right (easier to implement than also adding bottom, left). Defaults to None.
             t (int): waiting time for factories. Defaults to None
             optimize_factories (int): decides whether factories are optimized or not. Defaults to false.
+            custom_layout (list[list, nx.Graph] | None): Defaults to None because custom layouts not assumed to be standard. The first list in the list should be 
+                a `data_qubits_loc` of the node locations of data qubits and nx.Graph the corresponding graph (possibly differing from the standard networkx hex graph shape)
+                With custom_layout one can avoid using the `free_rows` related stuff. 
         
         Raises:
             ValueError: _description_
@@ -76,7 +80,12 @@ class HillClimbing:
         self.n = n
         self.max_restarts = max_restarts
         self.max_iterations = max_iterations
-        assert layout_type in {"row", "sparse", "pair", "hex"}, "Unknown layout_type!"
+        assert layout_type in {"row", "sparse", "pair", "hex", "custom"}, "Unknown layout_type!"
+        if layout_type == "custom":
+            assert free_rows is None, "If custom layout is chosen, the `free_rows` parameter has no meaning and should be set to None."
+            assert custom_layout is not None, "If custom layout is chosen, the `custom_layout` must include a data_qubit_locs list as well as the custom graph."
+        else:
+            assert custom_layout is None, "If no custom layout, also `custom_layout`should be None."
         self.layout_type = layout_type
         lat = HexagonalLattice(m, n)
         self.lat = lat
@@ -88,6 +97,9 @@ class HillClimbing:
             data_qubit_locs = lat.gen_layout_pair()
         elif layout_type == "hex":
             data_qubit_locs = lat.gen_layout_hex()
+        elif layout_type == "custom":
+            data_qubit_locs = custom_layout[0]
+            self.lat.G = custom_layout[1]
         else:
             msg = "unkown layout type"
             raise ValueError(msg)
@@ -182,13 +194,19 @@ class HillClimbing:
         factory_positions = layout["factory_positions"]
         if any(type(el) is int for el in self.circuit):
             router = ShortestFirstRouterTGates(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
-            self.lat.G = router.G #also add to self
-            if "left" in self.free_rows:
-                router.G = self.add_left_g(router.G)   
+            if self.layout_type == "custom": #Must update the router's g to the customized g
+                router.G = self.lat.G.copy()
+            else: #if not custom, update self.lat.G by the router's G because m,n might differ from initial values.
                 self.lat.G = router.G #also add to self
-        else:
+                if "left" in self.free_rows:
+                    router.G = self.add_left_g(router.G)   
+                    self.lat.G = router.G #also add to self
+        else: #only CNOTs
             router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
-            self.lat.G = router.G #also add to self
+            if self.layout_type == "custom": #Must update the router's g to the customized g
+                router.G = self.lat.G.copy()
+            else:
+                self.lat.G = router.G #also add to self (but should be redundant right? self.lat.G and router.G shoudl be the same anyways if no T gates present)
         if self.metric == "crossing":
             if self.optimize_factories and any(type(el) is int for el in self.circuit):
                 cost = np.sum(router.count_crossings_per_layer(t_crossings = True))
@@ -211,7 +229,7 @@ class HillClimbing:
         layout = {}
         perm = list(range(self.q))
         random.shuffle(perm)
-        for i,j in zip(perm, self.data_qubit_locs):
+        for i,j in zip(perm, self.data_qubit_locs): #this also respects custom layouts, because we adapted self.data_qubit_locs in case of layout_type="custom"
             layout.update({i: (int(j[0]), int(j[1]))}) #otherwise might be np.int64
         
         #Add generation of random choice of factory positions
@@ -226,10 +244,6 @@ class HillClimbing:
         """Creates the Neighborhood of a given layout by going through each terminal pair and swapping their positions.
         
         If there are no T gates, there will be l=len(terminal_pairs) elements in the neighborhood.
-        In the presence of t gates, there will b l*k*(n-k) elements in the neighborhood, where n = len(possible_factory_positions) and k = num_factories.
-        For the CNOTs, each element swaps the qubit locations of one CNOT pair -> l elements
-        Including the factories, each neighbor places one occupied factory spot to another, hence k(n-k).
-        In total, multiplication between both schemes, thus l*k*(n-k).
         
         Args:
             layout (dict): qubit label assignment on the lattice. keys = qubit label, value = node label
