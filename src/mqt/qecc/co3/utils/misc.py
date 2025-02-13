@@ -57,7 +57,18 @@ def translate_layout_circuit(pairs: list[tuple[int, int] | int], layout: dict) -
     a lsit of factory positions in the key="factory_positions". but this will be ignored for this
     """
     #return [(layout[pair[0]], layout[pair[1]]) for pair in pairs]
-    return [(layout[pair[0]], layout[pair[1]]) if isinstance(pair, tuple) else layout[pair] for pair in pairs]
+    terminal_pairs = [(layout[pair[0]], layout[pair[1]]) if isinstance(pair, tuple) else layout[pair] for pair in pairs]
+    terminal_pairs_updated = []
+    for i,el in enumerate(terminal_pairs):
+        if isinstance(el[0], tuple) and isinstance(el[1], tuple):
+            tup1 = (int(el[0][0]), int(el[0][1]))
+            tup2 = (int(el[1][0]), int(el[1][1]))
+            terminal_pairs_updated.append((tup1,tup2))
+        else:
+            tup = (int(el[0]), int(el[1]))
+            terminal_pairs_updated.append(tup)
+    return terminal_pairs_updated
+
 
 """
 def brute_force_qubit_assignments(data_qubit_locs: list[tuple[int, int]], num: int) -> list[dict]:

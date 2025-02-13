@@ -9,6 +9,7 @@ import random
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 from matplotlib.cm import rainbow
 from tqdm import tqdm
@@ -45,15 +46,17 @@ class HillClimbing:
             max_restarts (int): Maximum number of random restarts.
             max_iterations (int): Maximum number of iterations per restart.
             circuit (list[tuple[int,int]]): list of qubits to connect (terminal pairs aka cnots) 
-            layout_type (str): (row, sparse, pair)
+            layout_type (str): (row, sparse, pair, hex)
             m (int): number of rows of hexagons in the lattice
             n (int): number of columns of hexagons in the lattices
             metric (str): "crossing", "routing", "distance"
             possible_factory_positions (list[tuple[int,int]] | None): possible locations for the factories (must follow nx labeling of hex. lattice and must be placed outside the generated layout)
+                ! important: these positions must already respect the "free_rows"!, only the data_qubt_locs are changed depending on free_rows.
             num_factories (int | None): Number of factories to be used (subset of possible_factory_positions).
             free_rows (list[str] | None): Adds one or more rows to lattice, either top or right (easier to implement than also adding bottom, left). Defaults to None.
             t (int): waiting time for factories. Defaults to None
             optimize_factories (int): decides whether factories are optimized or not. Defaults to false.
+        
         Raises:
             ValueError: _description_
         """
@@ -62,7 +65,7 @@ class HillClimbing:
             assert possible_factory_positions is not None, "If T gates included in circuit, `possible_factory_positions` must NOT be None."
             assert num_factories is not None, "If T gates included in circuit, `num_factories` must NOT be None."
             assert t is not None, "If T gates included in circuit, `num_factories` must NOT be None."
-            assert len(possible_factory_positions) > num_factories, "`possible_factory_positions` must have more elements than `num_factories`."
+            assert len(possible_factory_positions) >= num_factories, f"`possible_factory_positions` must have more or equal elements than `num_factories`. But {len(self.possible_factory_positions)} ? {num_factories}"
         else:
             assert optimize_factories is False, "If no T gates present, optimize_factories must be false."
         self.possible_factory_positions = possible_factory_positions
@@ -73,15 +76,18 @@ class HillClimbing:
         self.n = n
         self.max_restarts = max_restarts
         self.max_iterations = max_iterations
-        assert layout_type in {"row", "sparse", "pair"}, "Unknown layout_type!"
+        assert layout_type in {"row", "sparse", "pair", "hex"}, "Unknown layout_type!"
         self.layout_type = layout_type
         lat = HexagonalLattice(m, n)
+        self.lat = lat
         if layout_type == "row":
             data_qubit_locs = lat.gen_layout_row()
         elif layout_type == "sparse":
             data_qubit_locs = lat.gen_layout_sparse()
         elif layout_type == "pair":
             data_qubit_locs = lat.gen_layout_pair()
+        elif layout_type == "hex":
+            data_qubit_locs = lat.gen_layout_hex()
         else:
             msg = "unkown layout type"
             raise ValueError(msg)
@@ -101,19 +107,74 @@ class HillClimbing:
         if possible_factory_positions is not None:
             assert set(data_qubit_locs) & set(possible_factory_positions) == set(), "The factory possitions are not allowed to intersect with the logical data qubit locations."
         
-        valid_values = {"right", "top"}
+        valid_values = {"right", "top", "left"}
         if free_rows is not None:
             assert set(free_rows) == set(free_rows) & valid_values, "free_rows must only contain 'right' or 'top' and no duplicates."
             #increase the lattice size
-            if "right" in free_rows and "top" not in free_rows:
+            if "right" in free_rows and "top" not in free_rows:# and "left" not in free_rows:
                 self.n += 1
-            elif "right" not in free_rows and "top" in free_rows:
+            elif "right" not in free_rows and "top" in free_rows:# and "left" not in free_rows:
                 self.m += 1
-            elif "right" in free_rows and "top" in free_rows:
+            elif "right" in free_rows and "top" in free_rows:# and "left" not in free_rows:
                 self.n += 1
                 self.m += 1
+            #elif "right" in free_rows and "top" in free_rows and "left" in free_rows:
+            #    self.n += 2
+            #    self.m += 1
+            #elif "right" in free_rows and "top" not in free_rows and "left" in free_rows:
+            #    self.n += 2
+            #elif "right" not in free_rows and "top" in free_rows and "left" in free_rows:
+            #    self.n += 1
+            #    self.m += 1
         self.free_rows = free_rows
 
+    @staticmethod
+    def add_left_g(g: nx.Graph) -> nx.Graph:
+        """Adds a row to the left of the graph (will have negative labels but would like to avoid to change self.data_qubit_locs).
+
+        Args:
+            g (nx.Graph): original graph
+
+        Returns:
+            g (nx.Graph): graph with additional left column
+    
+        """
+        pos = nx.get_node_attributes(g, "pos")
+        y_diff = 0.8660254037844386
+
+        #filter out leftmost column (x=0)
+        left_col = [node for node in g.nodes if node[0] == 0]
+        #add another node in this x=0 row
+        new_top = (0, max(el[1] for el in left_col)+1)
+        pos_old = pos[0, max(el[1] for el in left_col)]
+        left_col.append(new_top)
+        pos_new = (pos_old[0]-0.5, pos_old[1] + y_diff)
+        g.add_node(new_top, pos = pos_new)
+        g.add_edge(new_top, (0, max(el[1] for el in left_col)-1))
+        pos = nx.get_node_attributes(g, "pos")
+        
+        left_nodes = []#gather together nodes and add them to the graph as well as the horizontal edge
+        for node in left_col:
+            if node[1]%2!=0:
+                new_node = (-1, node[1])
+                pos_old = pos[node]
+                pos_new = (pos_old[0]-1, pos_old[1])
+                g.add_node(new_node, pos = pos_new)
+                g.add_edge(new_node, node)
+                left_nodes.append(new_node)
+        pos = nx.get_node_attributes(g, "pos")
+
+        #add the x=-2 row
+        for node1, node2 in zip(left_nodes, left_nodes[1:]):
+            new_node = (-2, node1[1]-1)
+            pos_old = pos[node1]
+            posy = pos_old[1]+y_diff
+            pos_new = (-1.5, posy)
+            g.add_node(new_node, pos = pos_new)
+            g.add_edge(new_node, node1)
+            g.add_edge(new_node, node2)
+
+        return g
 
     def evaluate_solution(self, layout: dict) -> int:
         """Evaluates the layout=solution according to self.metric."""
@@ -121,8 +182,13 @@ class HillClimbing:
         factory_positions = layout["factory_positions"]
         if any(type(el) is int for el in self.circuit):
             router = ShortestFirstRouterTGates(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
+            self.lat.G = router.G #also add to self
+            if "left" in self.free_rows:
+                router.G = self.add_left_g(router.G)   
+                self.lat.G = router.G #also add to self
         else:
             router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
+            self.lat.G = router.G #also add to self
         if self.metric == "crossing":
             if self.optimize_factories and any(type(el) is int for el in self.circuit):
                 cost = np.sum(router.count_crossings_per_layer(t_crossings = True))
@@ -182,6 +248,7 @@ class HillClimbing:
                 layout_copy[pair[1]] = q_0_pos
                 layout_copy[pair[0]] = q_1_pos
                 
+                """
                 if any(type(el) is int for el in self.circuit) and self.optimize_factories: #if T gates present
                     #adapt the layout["factory_positions"]. 
                     current = layout_copy["factory_positions"].copy()
@@ -195,7 +262,8 @@ class HillClimbing:
                             layout_copy["factory_positions"] = current_copy_copy.copy()
                             neighborhood.append(layout_copy.copy())
                 else:
-                    neighborhood.append(layout_copy.copy())
+                """
+                neighborhood.append(layout_copy.copy())
 
         return neighborhood
 

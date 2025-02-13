@@ -177,6 +177,75 @@ class HexagonalLattice:
                 if not flag_x1 and not flag_x2:
                     break
         return data_qubit_locs
+
+    def gen_layout_hex(self) -> list[tuple[int, int]]:
+        """Generates Hexagon Layout (data qubit locations without qubit labels).
+        
+        This may not be fully general for arbitrarily sized lattices. but for the sizes we consider it suffices.
+
+        Returns:
+            list[tuple[int, int]]: Locations on the graph for data qubits (no qubit labels assigned yet)
+        """
+        start_hex = [(1,1), (1,2), (1,3), (2,1), (2,2), (2,3)]
+
+        start_hex_lst = [start_hex.copy()]
+        #vertical shift y by 14 until and add if hex still inside the grid
+        in_lat = True
+        while in_lat:
+            temp_hex = [(el[0], el[1] + 14) for el in start_hex]
+            #check whether nodes in lattice
+            missing_nodes = [node for node in temp_hex if node not in self.G]
+            if len(missing_nodes)!=0:
+                in_lat = False
+                break
+            start_hex_lst.append(temp_hex)
+            start_hex = temp_hex
+
+        #horizontal shift
+        in_lat = True
+        start_hex = start_hex_lst[0].copy()
+        while in_lat:
+            temp_hex = [(el[0]+3, el[1]+1) for el in start_hex]
+            missing_nodes = [node for node in temp_hex if node not in self.G]
+            if len(missing_nodes):
+                in_lat = False
+                break
+            #check whether lower hexagon also available
+            temp_hex_lower = [(el[0]-1, el[1]-5) for el in temp_hex]
+            missing_nodes = [node for node in temp_hex_lower if node not in self.G]
+            if len(missing_nodes):
+                start_hex_lst.append(temp_hex)
+                start_hex = temp_hex
+            else:
+                start_hex_lst.append(temp_hex_lower)
+                start_hex = temp_hex_lower
+
+        #go from each element in start_hex_lst to the right until the lattice ends
+        final_hex_lst = start_hex_lst.copy()
+        for start_hex in start_hex_lst:
+            in_lat = True
+            start_hex_t = start_hex
+            while in_lat:
+                temp_hex = [(el[0]+1, el[1]+5) for el in start_hex_t]
+                #check whether nodes in lattice
+                missing_nodes = [node for node in temp_hex if node not in self.G]
+                if len(missing_nodes):
+                    in_lat = False
+                    break
+                final_hex_lst.append(temp_hex)
+                start_hex_t = temp_hex
+
+
+        filtered_hex = []
+        for hexagon in final_hex_lst:
+            min_neighbors = [len(list(self.G.neighbors(node)))>=3 for node in hexagon]
+            if all(min_neighbors):
+                filtered_hex.append(hexagon)
+        
+        #flatten
+        return [el for sublist in filtered_hex for el in sublist]
+
+
         
     def plot_lattice(self, size: tuple[float,float] = (3.5, 3.5), 
                      data_qubit_locs: list[tuple[int, int]] | None = None, 
@@ -689,7 +758,7 @@ class ShortestFirstRouterTGates(HexagonalLattice):
                     current_layer.append(pair)
                     used_qubits.update([pair])
             else:
-                msg = "Wrong elements in `terminal_pairs`."
+                msg = f"Wrong elements in `terminal_pairs`: type(pair[0,1]):{type(pair[0]), type(pair[1])}."
                 raise TypeError(msg)
 
         if current_layer:
