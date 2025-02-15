@@ -129,3 +129,55 @@ def test_row_qubit_locs():
     data_qubit_locs = lat.gen_layout_row()
     error_message = "Generation of Row Layout in HexagonalLattice is faulty."
     assert data_qubit_locs == data_qubit_locs_expected, error_message
+
+def test_dynamic_router():
+    """Tests the dynamic routing."""
+    q=6
+    pairs = [
+        (0,1), (2,3), (4,5),
+        (0,2), 4, (1,5),
+        (0,1), (2,3)
+    ]
+    m = 3
+    n = 4
+    factory_locs = [(1,7), (3,7)]
+    layout = {2: (1, 2), 5: (1, 3), 1: (2, 2), 3: (2, 3), 0: (3, 2), 4: (3, 3)}
+    terminal_pairs = co.translate_layout_circuit(pairs, layout)
+    router = co.ShortestFirstRouterTGatesDyn(m,n,terminal_pairs,factory_locs,t=1)
+    vdp_layers = router.find_total_vdp_layers_dyn()
+
+    desired_layers = [{((3, 2), (2, 2)): [(3, 2), (2, 2)],
+        ((3, 3), (1, 3)): [(3, 3), (3, 4), (2, 4), (2, 5), (1, 5), (1, 4), (1, 3)]},
+        {(3, 3): [(3, 3), (3, 4), (3, 5), (3, 6), (3, 7)],
+        ((1, 2), (2, 3)): [(1, 2),
+        (0, 2),
+        (0, 3),
+        (0, 4),
+        (1, 4),
+        (1, 5),
+        (2, 5),
+        (2, 4),
+        (2, 3)]},
+        {((3, 2), (1, 2)): [(3, 2), (3, 1), (3, 0), (2, 0), (2, 1), (1, 1), (1, 2)]},
+        {((2, 2), (1, 3)): [(2, 2),
+        (2, 1),
+        (1, 1),
+        (1, 0),
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (0, 4),
+        (1, 4),
+        (1, 3)]},
+        {((3, 2), (2, 2)): [(3, 2), (2, 2)],
+        ((1, 2), (2, 3)): [(1, 2),
+        (0, 2),
+        (0, 3),
+        (0, 4),
+        (1, 4),
+        (1, 5),
+        (2, 5),
+        (2, 4),
+        (2, 3)]}]
+    assert vdp_layers == desired_layers, "A test instance of routing dynamically vdp layers does not yield the desired result."

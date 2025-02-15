@@ -544,6 +544,11 @@ class ShortestFirstRouter(HexagonalLattice):
             self.order_terminal_pairs(layer)
             vdp_layers_temp = self.find_all_vdp_layers(layer)
             vdp_layers += vdp_layers_temp
+                #it might be possible that there are bugs. hence, check whether vdp layers really contains as main paths as there are gates.
+        keys = []
+        for lst in vdp_layers:
+            keys += lst.keys()
+        assert len(keys) == len(self.terminal_pairs), f"The static routing has a bug. There are {len(self.terminal_pairs)} to be routed, but the final vdp_layers only has {len(keys)} paths."
         return vdp_layers
 
     def plot_lattice_paths(self, layer: int, layout: dict | None = None, size: tuple[float,float] = (3.5,3.5)) -> None:
@@ -633,7 +638,7 @@ class ShortestFirstRouterTGates(HexagonalLattice):
             n (int): The number of columns of hexagons in the lattice.
             terminal_pairs (list[tuple[tuple[int, int], tuple[int, int]]): pairs of vertices to be connected (networkx labeling)
             factory_positions (list[tuple[int,int]]): Positions were factories are placed (should be on the boundary of the data qubits), follows networkx labeling
-            t (int): A factory needs t x d rounds of state distillation to generate a new T state.
+            t (int): A factory needs t logical time steps of our scheme to generate a new T state
         """
         super().__init__(m, n)
         self.terminal_pairs = terminal_pairs
@@ -653,6 +658,7 @@ class ShortestFirstRouterTGates(HexagonalLattice):
             self.factory_times.update({factory : t})
         self.layers_cnot_t = self.split_layer_terminal_pairs()
         self.layers_cnot_t_orig = self.layers_cnot_t.copy()
+        self.layers_copy = self.layers_cnot_t.copy()
 
     def count_crossings_per_layer(self, t_crossings: bool = False) -> list[int]:
         """Counts the crossings of the simple paths between cnots and between shortest factory to qubit path (respecting terminals and factory positions) per layer.
@@ -783,8 +789,11 @@ class ShortestFirstRouterTGates(HexagonalLattice):
                     if pair != t_p[0] and pair != t_p[1]
                 ]
                 terminals_temp = list(set(terminals_temp))
+                #print("terminals to remove from g_temp", terminals_temp)
                 g_temp.remove_nodes_from(terminals_temp)
+                #print("g temp nodes", g_temp.nodes())
                 try:
+                    #print("tp 0, 1",t_p[0], t_p[1])
                     path = nx.dijkstra_path(g_temp, t_p[0], t_p[1])
                 except nx.NetworkXNoPath as exc:
                     msg = (
@@ -980,6 +989,168 @@ class ShortestFirstRouterTGates(HexagonalLattice):
             vdp_layers += vdp_layers_temp
         return vdp_layers
     
+
+class ShortestFirstRouterTGatesDyn(ShortestFirstRouterTGates):
+    """Shortest First Routing for VDP on Hexagonal Lattice with adaption to greedily include T gates. Dynamically adapts the initial layers."""
+    def __init__(
+        self, m: int, n: int,
+        terminal_pairs: list[tuple[tuple[int, int], tuple[int, int]]],
+        factory_positions: list[tuple[int,int]],
+        t: int
+    ) -> None:
+        """Routing for Hexagonal Lattice with adaption to greedily include T gates.
+        
+        Start with graph $G$ and an empty solution.
+        While $G$ contains any path connecting any demand pair,
+        choose the shortest such path $P$, add $P$ to the solution,
+        and delete all vertices of $P$ from $G$
+
+        T gates are included by including the shortest connection between any factory site
+        and the respective qubit for the initial ordering. After the ordering, handle T gates
+        similar to CNOTs just that we have to check which factories are available + it may be 
+        necessary to wait 1 or more layers until a T factory becomes available.
+
+        Args:
+            m (int): The number of rows of hexagons in the lattice.
+            n (int): The number of columns of hexagons in the lattice.
+            terminal_pairs (list[tuple[tuple[int, int], tuple[int, int]]): pairs of vertices to be connected (networkx labeling)
+            factory_positions (list[tuple[int,int]]): Positions were factories are placed (should be on the boundary of the data qubits), follows networkx labeling
+            t (int): A factory needs t logical time steps of our scheme to generate a new T state
+        """
+        super().__init__(m, n, terminal_pairs, factory_positions, t)
+    
+    def find_total_vdp_layers_dyn(self) -> list[dict]:
+        """Find all routes for all initial and secondary layers.
+
+        Important: Adapt time stampes of the factories.
+        """    
+        vdp_layers = []
+        #temp = 0
+        layers_cnot_t_prev = None
+        counter = 0
+        while len(self.layers_cnot_t) > 0:
+            #do not forget to use order_terminal_pairs before routing (update after each new layer)
+            #print("new layers_cnot_t", self.layers_cnot_t_orig)
+            for i in range(len(self.layers_cnot_t_orig)):
+                self.order_terminal_pairs(i)
+                self.layers_cnot_t = self.layers_cnot_t_orig
+            #print("ordered", self.layers_cnot_t)
+            layer = 0 #since we adapt the layers_cnot_t_orig inplace, always layer=0 needed
+            vdp_dict, terminal_pairs_remainder = self.find_max_vdp_set(layer)
+            
+            #print("remainder", terminal_pairs_remainder)
+            keys = []
+            for lst in vdp_layers:
+                keys += lst.keys()
+            #if layers_cnot_t_prev == self.layers_cnot_t_orig and len(terminal_pairs_remainder)==0 and len(keys) == len(self.terminal_pairs):
+            if layers_cnot_t_prev == self.layers_cnot_t_orig and len(keys) == len(self.terminal_pairs):
+                #print("desired break")
+                break
+            layers_cnot_t_prev = self.layers_cnot_t_orig.copy()
+
+            for key in self.factory_times:
+                if self.factory_times[key] != 0:
+                    self.factory_times[key] -= 1
+
+            vdp_layers.append(vdp_dict)
+            initial_layers_update = self.push_remainder_into_layers(terminal_pairs_remainder)
+            self.layers_cnot_t_orig = initial_layers_update
+            self.layers_cnot_t = initial_layers_update
+            #print("vdp layers", vdp_layers)
+            #print(f"===========len layers cnot t {len(self.layers_cnot_t)}=============")
+            #temp += 1
+            if len(self.layers_cnot_t) == 0:
+                break
+            #if temp == 20:
+            #    break
+            counter += 1
+
+            #avoid infinite loops
+            if counter == len(self.terminal_pairs) * 10:
+                break
+
+        #it might be possible that there are bugs. hence, check whether vdp layers really contains as main paths as there are gates.
+        keys = []
+        for lst in vdp_layers:
+            keys += lst.keys()
+        assert len(keys) == len(self.terminal_pairs), f"The dynamic routing has a bug. There are {len(self.terminal_pairs)} to be routed, but the final vdp_layers only has {len(keys)} paths."
+        return vdp_layers
+            
+
+    @staticmethod
+    def split_current_layer(single_initial_layer: list[int | tuple[int,int]]) -> list[list[int | tuple[int,int]]]:
+        """Similar to split_layer_terminal_pairs. but does not inplace update."""
+        layers = []
+        current_layer = [] 
+        used_qubits = set()  
+
+        for pair in single_initial_layer:
+            if isinstance(pair[0], tuple) and isinstance(pair[1], tuple):
+                if pair[0] in used_qubits or pair[1] in used_qubits:
+                    layers.append(current_layer)
+                    current_layer = [pair]
+                    used_qubits = set(pair)
+                else:
+                    current_layer.append(pair)
+                    used_qubits.update(pair)
+            elif isinstance(pair[0], int) and isinstance(pair[1], int):
+                if pair in used_qubits:
+                    layers.append(current_layer)
+                    current_layer = [pair]
+                    used_qubits = {pair}
+                else: 
+                    current_layer.append(pair)
+                    used_qubits.update([pair])
+            else:
+                msg = f"Wrong elements in `terminal_pairs`: type(pair[0,1]):{type(pair[0]), type(pair[1])}."
+                raise TypeError(msg)
+
+        if current_layer:
+            layers.append(current_layer)
+
+        return layers
+    
+
+    def push_remainder_into_layers(self, remainder: list[tuple[int,int]]) -> list[list[tuple[int,int]]]:
+        """Updates a copy of layers_cnot_t (removed used stuff and takes remainder of previous layer, pushes through).
+
+        Args:
+            remainder (list[tuple[int,int]]): remaining gates which could not be routed so far in current layer.
+
+        Returns:
+            list[list[tuple[int,int]]]: layered gates with remainder being pushed into next layer.
+        """
+        initial_layers = self.layers_cnot_t_orig.copy()
+        #print("initial layers", initial_layers)
+        if len(initial_layers) > 1:
+            del initial_layers[0] # delete already processed layer (remainder was part of this layer)
+        elif len(initial_layers) == 1 and len(remainder) != 0:
+            del initial_layers[0]
+        i = 0
+        flag = True
+        while flag is True:
+            try:
+                initial_layers[i] = remainder + initial_layers[i] #push remainder in front of the new zeroth entry (previously entry 1)
+                #print("initial_layers[i]", initial_layers[i])
+            except IndexError: #if no further initial_layer[i] availabel but still the previous layer was split
+                initial_layers.append(remainder)
+            #print("initial_layers[i]", initial_layers[i])
+            layers = self.split_current_layer(initial_layers[i])
+            #print("split layers", layers)
+            if len(layers) == 1:
+                #adding remainder to initial_layers[0] caused no conflict, so we are finished
+                flag = False
+                break
+            if len(layers) == 2: #push further through
+                initial_layers[i] = layers[0]
+                remainder = layers[1]
+                i += 1
+            else:
+                msg = f"Something weird happened during pushing remainders. len(layers)={len(layers)}, layers = {layers}"
+                raise RuntimeError(msg)
+        
+        return initial_layers
+
 
 def plot_lattice_paths(
         g: nx.Graph,

@@ -38,7 +38,7 @@ def test_crossing_metric():
     max_restarts = None
     max_iterations = None
     hc = co.HillClimbing(max_restarts, max_iterations, circuit, layout_type, m, n, metric)
-    layout = {1: (1, 2), 5: (1, 3), 3: (2, 2), 0: (2, 3), 4: (3, 2), 2: (3, 3)}
+    layout = {1: (1, 2), 5: (1, 3), 3: (2, 2), 0: (2, 3), 4: (3, 2), 2: (3, 3), "factory_positions": []}
 
     cost = hc.evaluate_solution(layout)
     expected_cost = 2
