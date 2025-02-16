@@ -130,6 +130,52 @@ def test_row_qubit_locs():
     error_message = "Generation of Row Layout in HexagonalLattice is faulty."
     assert data_qubit_locs == data_qubit_locs_expected, error_message
 
+def test_hex_qubit_locs():
+    """Tests allocation of qubits (no logical labels) for hexagonal layout on a m,n networkx grid."""
+    data_qubit_locs_expected = [
+        (1, 1),
+        (1, 2),
+        (1, 3),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (4, 2),
+        (4, 3),
+        (4, 4),
+        (5, 2),
+        (5, 3),
+        (5, 4),
+        (2, 6),
+        (2, 7),
+        (2, 8),
+        (3, 6),
+        (3, 7),
+        (3, 8),
+        (3, 11),
+        (3, 12),
+        (3, 13),
+        (4, 11),
+        (4, 12),
+        (4, 13),
+        (5, 7),
+        (5, 8),
+        (5, 9),
+        (6, 7),
+        (6, 8),
+        (6, 9),
+        (6, 12),
+        (6, 13),
+        (6, 14),
+        (7, 12),
+        (7, 13),
+        (7, 14)
+    ]
+    m, n = 8, 8
+    lat = co.HexagonalLattice(m,n)
+    data_qubit_locs = lat.gen_layout_hex()
+    error_message = "Generation of Hex Layout in HexagonalLattice is faulty."
+    assert data_qubit_locs == data_qubit_locs_expected, error_message
+
 def test_dynamic_router():
     """Tests the dynamic routing."""
     q=6

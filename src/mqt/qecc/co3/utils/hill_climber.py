@@ -14,7 +14,12 @@ import numpy as np
 from matplotlib.cm import rainbow
 from tqdm import tqdm
 
-from .lattice_router import HexagonalLattice, ShortestFirstRouter, ShortestFirstRouterTGates
+from .lattice_router import (
+    HexagonalLattice,
+    ShortestFirstRouter,
+    ShortestFirstRouterTGates,
+    ShortestFirstRouterTGatesDyn,
+)
 from .misc import translate_layout_circuit
 
 
@@ -39,7 +44,8 @@ class HillClimbing:
             free_rows : list[str] | None = None,
             t : int | None = None,
             optimize_factories : bool = False,
-            custom_layout: list[list, nx.Graph] | None = None
+            custom_layout: list[list, nx.Graph] | None = None,
+            routing: str = "static"
         ) -> None:
         """Initializes the Hill Climbing with Random Restarts algorithm.
 
@@ -60,10 +66,15 @@ class HillClimbing:
             custom_layout (list[list, nx.Graph] | None): Defaults to None because custom layouts not assumed to be standard. The first list in the list should be 
                 a `data_qubits_loc` of the node locations of data qubits and nx.Graph the corresponding graph (possibly differing from the standard networkx hex graph shape)
                 With custom_layout one can avoid using the `free_rows` related stuff. 
-        
+            routing (str): Defaults to static. Can be "static" or "dynamic". Chooses the routing scheme, whether the layout-agnostic initial layers are dynamically adapted or not.
+                Strictly speaking, this is only relevant if the metric `crossing` is used, as this is the only moment when the routing scheme is used in hill climbing.
         Raises:
             ValueError: _description_
         """
+        if routing not in {"static", "dynamic"}:
+            msg = "Wrong input value for `routing`. Must be `static` or `dynamic`."
+            raise ValueError(msg)
+        self.routing = routing
         #if circuit includes also single ints (i.e. T gates on qubit i), then ensure, that possible_factory_positions and num_factories are not None
         if any(type(el) is int for el in circuit):
             assert possible_factory_positions is not None, "If T gates included in circuit, `possible_factory_positions` must NOT be None."
@@ -193,7 +204,10 @@ class HillClimbing:
         terminal_pairs = translate_layout_circuit(self.circuit, layout)
         factory_positions = layout["factory_positions"]
         if any(type(el) is int for el in self.circuit):
-            router = ShortestFirstRouterTGates(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
+            if self.routing == "static":
+                router = ShortestFirstRouterTGates(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
+            elif self.routing == "dynamic":
+                router = ShortestFirstRouterTGatesDyn(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
             if self.layout_type == "custom": #Must update the router's g to the customized g
                 router.G = self.lat.G.copy()
             else: #if not custom, update self.lat.G by the router's G because m,n might differ from initial values.
@@ -202,7 +216,10 @@ class HillClimbing:
                     router.G = self.add_left_g(router.G)   
                     self.lat.G = router.G #also add to self
         else: #only CNOTs
-            router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
+            if self.routing == "static":
+                router = ShortestFirstRouter(m = self.m, n = self.n, terminal_pairs = terminal_pairs)
+            elif self.routing == "dynamic": # !todo adapt this, because if only cnots, t might not be defined
+                router = ShortestFirstRouterTGatesDyn(m = self.m, n = self.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = self.t)
             if self.layout_type == "custom": #Must update the router's g to the customized g
                 router.G = self.lat.G.copy()
             else:
@@ -220,7 +237,10 @@ class HillClimbing:
             if any(type(el) is int for el in self.circuit):
                 raise NotImplementedError
         elif self.metric == "routing":
-            vdp_layers = router.find_total_vdp_layers()
+            if self.routing == "static":
+                vdp_layers = router.find_total_vdp_layers()
+            elif self.routing == "dynamic":
+                vdp_layers = router.find_total_vdp_layers_dyn()
             cost = len(vdp_layers)
         return cost
 
