@@ -1,7 +1,15 @@
 """Misc functions for plotting and Benchmarking."""
 from __future__ import annotations
 
+import qiskit as qk
+from qiskit.quantum_info import random_statevector
+from qiskit_aer import AerSimulator
+from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
 import random
+import math
+import mqt.qecc.co3 as co
+import numpy as np
 
 
 def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: float = 0.5) -> list[tuple[int, int] | int]:
@@ -68,6 +76,101 @@ def translate_layout_circuit(pairs: list[tuple[int, int] | int], layout: dict) -
             tup = (int(el[0]), int(el[1]))
             terminal_pairs_updated.append(tup)
     return terminal_pairs_updated
+
+def compare_original_dynamic_gate_order(q:int, layout: dict, router: co.ShortestFirstRouterTGatesDyn) -> bool:
+    """Generates a qiskit circuit for both the order after doing dynamic routing and the original order.
+    Hence, it is checked whether the many reorderings in dynamic routing are really safe and sound.
+
+    Args: 
+        q (int): number of qubits
+        router (co.ShortestFirstRouterTGatesDyn): router to be checked
+        layout (dict): must be the same layout with which the router's terminal_pairs were initialized.
+        
+    Retunrs:
+        bool: Whether the final states coincide, i.e. whether dynamic routing is safe.
+    """
+    assert q <= 20, "Too many qubits cannot be simulated via qiskit statevector simulator anymore. Consder less than 20 qubits."
+
+    #run the dynamic routing once
+    vdp_layers_dyn = router.find_total_vdp_layers_dyn()
+
+    #original layers
+    gates_previous = []
+    for lst in router.layers_copy:
+        gates_previous += lst
+
+    #gate order after routing 
+    gates_routing = []
+    for dct in vdp_layers_dyn:
+        gates_routing += list(dct.keys())
+
+    #!check whether gates_previous and gates_routing indeed differ
+
+    reverse_mapping = {v: k for k, v in layout.items()}
+    translated_previous = []
+    for item in gates_previous:
+        if isinstance(item, tuple):  # If it's a tuple, check if it's a nested pair
+            if isinstance(item[0], tuple):  # If it's a tuple of tuples (nested)
+                translated_previous.append(tuple(reverse_mapping[sub] for sub in item))
+            else:  # If it's a single tuple directly in the list
+                translated_previous.append(reverse_mapping[item])
+        else:  # If it's not a tuple (single number, shouldn't happen based on your input)
+            raise ValueError(f"Unexpected element in data: {item}")
+
+    translated_routing = []
+    for item in gates_routing:
+        if isinstance(item, tuple):  # If it's a tuple, check if it's a nested pair
+            if isinstance(item[0], tuple):  # If it's a tuple of tuples (nested)
+                translated_routing.append(tuple(reverse_mapping[sub] for sub in item))
+            else:  # If it's a single tuple directly in the list
+                translated_routing.append(reverse_mapping[item])
+        else:  # If it's not a tuple (single number, shouldn't happen based on your input)
+            raise ValueError(f"Unexpected element in data: {item}")
+        
+    #initialize random state (s.t. CNOT and T are not trivially appplied)
+    random_state = random_statevector(2**q)
+
+    #build circuits for previous and after dyn routing order
+    #original input order
+    qc_previous = qk.QuantumCircuit(q)
+    qc_previous.initialize(random_state, range(q))
+    qc_previous.barrier()
+
+    for op in translated_previous:
+        if isinstance(op, tuple):  # Apply CNOT for (control, target)
+            qc_previous.cx(op[0], op[1])
+        else:  # Apply Hadamard for single qubit
+            qc_previous.h(op)
+
+    backend = AerSimulator(method='statevector')
+    qc_previous.save_statevector()
+    pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
+    qc_combine = pm.run(qc_previous)
+
+    result = backend.run(qc_combine, shots= 1)
+    psi_out_complex = result.result()
+
+    #after dyn routing order
+    qc_routing = qk.QuantumCircuit(q)
+    qc_routing.initialize(random_state, range(q))
+    qc_routing.barrier()
+
+    for op in translated_routing:
+        if isinstance(op, tuple):  # Apply CNOT for (control, target)
+            qc_routing.cx(op[0], op[1])
+        else:  # Apply Hadamard for single qubit
+            qc_routing.h(op)
+
+    backend = AerSimulator(method='statevector')
+    qc_routing.save_statevector()
+    pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
+    qc_combine = pm.run(qc_routing)
+
+    result2 = backend.run(qc_routing, shots= 1)
+    psi_out_complex_2 = result2.result()
+
+    diff = np.linalg.norm(psi_out_complex.data()["statevector"] - psi_out_complex_2.data()["statevector"])
+    return math.isclose(diff, 0, abs_tol=1e-14)
 
 
 """

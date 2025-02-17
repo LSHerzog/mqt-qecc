@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 import mqt.qecc.co3 as co
@@ -227,3 +229,28 @@ def test_dynamic_router():
         (2, 4),
         (2, 3)]}]
     assert vdp_layers == desired_layers, "A test instance of routing dynamically vdp layers does not yield the desired result."
+
+def test_ordering_dyn_routing():
+    """Tests the ordering of gates from dynamic routing by doing a statevector simulation between initial and post routing gate order with qiskit."""
+    #generate layout
+    q = 20
+    t = 3
+    m = 5
+    n = 6
+    lat = co.HexagonalLattice(m,n)
+    data_qubit_locs = lat.gen_layout_row()
+    factory_locs = [(1,11), (3,11), (5,11)]
+    #generate random circuit
+    pairs = co.generate_random_circuit(q, min_depth = q, tgate=True, ratio=0.8)
+    #generate random layout
+    layout = {}
+    perm = list(range(len(data_qubit_locs)))
+    random.shuffle(perm)
+    for i,j in zip(perm, data_qubit_locs): #this also respects custom layouts, because we adapted self.data_qubit_locs in case of layout_type="custom"
+        layout.update({i: (int(j[0]), int(j[1]))}) #otherwise might be np.int64
+
+    terminal_pairs = co.translate_layout_circuit(pairs, layout)
+    router = co.ShortestFirstRouterTGatesDyn(m,n,terminal_pairs,factory_locs,t)
+
+    worked = co.compare_original_dynamic_gate_order(q, layout, router)
+    assert worked is True, "The ordering of your gates seems to be messed up in the dynamic routing."
