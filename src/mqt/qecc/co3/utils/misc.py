@@ -10,10 +10,97 @@ import random
 import math
 import mqt.qecc.co3 as co
 import numpy as np
-
+import warnings
 
 def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: float = 0.5) -> list[tuple[int, int] | int]:
     """Random CNOT Pairs. Optional: random T gates.
+    
+    makes it deep enough that each qubit is used at least once
+    min_depth is the minimum number of cnots
+    circuit = set of terminal pairs
+    the labeling does not yet follow the labels of a networkx.Graph but only range(q).
+
+    Note: min_depth should in principle be larger than q. 
+
+    Args:
+        q (int): number of qubits of the circuit
+        min_depth (int): minimal number of gates
+        tgate (bool, optional): whether t gates are included or not Defaults to False.
+        ratio (float, optional): ratio between t gates and cnots. 
+            more t gates if smaller than 0.5. 
+            note that the ratio is not deterministically fixed, only determines probabilities.
+            Defaults to 0.5.
+            ratio = num_cnots/(num_t + num_cnots)
+
+    Raises:
+        ValueError: _description_
+
+    Returns:
+        list[tuple[int, int]]: _description_
+    """
+    if q < 2:
+        msg = "q must be at least 2 to form pairs."
+        raise ValueError(msg)
+
+    #predetermine the desired number of t gates and cnots
+    num_cnot_gates= round(min_depth * ratio) if tgate else 0
+    num_t_gates = min_depth - num_cnot_gates
+
+    cnot_pairs = []
+    t_gates = []
+    used_qubits = set()
+
+    # Ensure each qubit is used at least once
+    available_qubits = list(range(q))
+    random.shuffle(available_qubits)
+
+    while len(cnot_pairs) <= num_cnot_gates:
+        a, b = random.sample(range(q), 2)
+        cnot_pairs.append((a, b))
+        used_qubits.update([a,b])
+
+    while len(t_gates) <= num_t_gates:
+        a = random.randrange(q)
+        t_gates.append(a)
+        used_qubits.add(a)
+
+    #check whether qubit labels are unused and if yes, add gates in accordance to ratio
+    missing_qubits = set(range(q)) - used_qubits
+    extra_cnot_count = num_cnot_gates
+    extra_t_count = num_t_gates
+
+
+
+    for i in missing_qubits:
+        # Compute current ratio dynamically
+        total_gates = extra_cnot_count + extra_t_count
+        expected_cnot_count = round(total_gates * ratio) if tgate else 0
+        expected_t_count = total_gates - expected_cnot_count
+
+        if extra_t_count < expected_t_count:
+            t_gates.append(i)  # Prioritize adding T gate
+            extra_t_count += 1
+        else:
+            b = random.choice(range(q))  # Pick a random second qubit
+            while b == i:  # Ensure b is different from i
+                b = random.choice(range(q))
+            cnot_pairs.append((i, b))
+            extra_cnot_count += 1    
+    
+
+    circuit = list(cnot_pairs) + list(t_gates)
+    num_c = len(list(cnot_pairs))
+    num_t = len(list(t_gates))
+    final_ratio = num_c /(num_c+num_t)
+    assert abs(ratio - final_ratio) < 0.07, "The final ratio deviates more than 0.05 from desired ratio= cnot/total gates"
+    random.shuffle(circuit)
+    
+
+    return circuit
+
+"""
+def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: float = 0.5) -> list[tuple[int, int] | int]:
+    Random CNOT Pairs. Optional: random T gates.
     
     makes it deep enough that each qubit is used at least once
     min_depth is the minimum number of cnots
@@ -34,7 +121,7 @@ def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: 
 
     Returns:
         list[tuple[int, int]]: _description_
-    """
+    
     if q < 2:
         msg = "q must be at least 2 to form pairs."
         raise ValueError(msg)
@@ -57,6 +144,7 @@ def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: 
             covered_elements.add(i)
 
     return pairs
+"""
 
 def translate_layout_circuit(pairs: list[tuple[int, int] | int], layout: dict) -> list[tuple[tuple[int, int]] | tuple[int,int]]:
     """Translates a `pairs` circuit (with int labels) into the lattice's labels for a given layout.
@@ -104,7 +192,9 @@ def compare_original_dynamic_gate_order(q:int, layout: dict, router: co.Shortest
     for dct in vdp_layers_dyn:
         gates_routing += list(dct.keys())
 
-    #!check whether gates_previous and gates_routing indeed differ
+    # warning if both lists are identical. Then, the test is trivial
+    if gates_routing == gates_previous:
+        warnings.warn("The test of comparing initial and post-dyn-routing order is trivial if both gates are ordered the same way. Try again to sample a new random circuit.", category=RuntimeWarning)
 
     reverse_mapping = {v: k for k, v in layout.items()}
     translated_previous = []
