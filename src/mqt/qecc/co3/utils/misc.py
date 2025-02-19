@@ -1,16 +1,18 @@
 """Misc functions for plotting and Benchmarking."""
 from __future__ import annotations
 
+import math
+import random
+import warnings
+
+import numpy as np
 import qiskit as qk
 from qiskit.quantum_info import random_statevector
-from qiskit_aer import AerSimulator
 from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+from qiskit_aer import AerSimulator
 
-import random
-import math
 import mqt.qecc.co3 as co
-import numpy as np
-import warnings
+
 
 def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: float = 0.5) -> list[tuple[int, int] | int]:
     """Random CNOT Pairs. Optional: random T gates.
