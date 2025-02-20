@@ -86,6 +86,11 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
         else:
             raise NotImplementedError
 
+        init_layout_lst = []
+        final_layout_lst = []
+        num_final_lst = []
+        num_init_lst = []
+
         for circuit in circuits:
             #generate random circ
             #circuit = co.generate_random_circuit(q, min_depth, tgate, ratio)
@@ -112,8 +117,23 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
             suffix = "test_250218"
             _, _, best_rep, score_history = hc.run(prefix, suffix, parallel, processes)
 
+            #do the initial routing
+            input_layout = score_history[best_rep]["layout_init"]
+            init_layout_lst.append(input_layout)
+            factory_positions = input_layout["factory_positions"]
+            terminal_pairs = co.translate_layout_circuit(circuit, input_layout)
+            router = co.ShortestFirstRouterTGatesDyn(m = hc.m, n = hc.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = t)
+            if custom_layout is not None:
+                router.G = g
+            #update routing graph
+            vdp_layers_initial_dyn = router.find_total_vdp_layers_dyn()
+            num_initial_dyn = len(vdp_layers_initial_dyn)
+            num_init_lst.append(num_initial_dyn)
+
+
             #do the optimized routing
             input_layout = score_history[best_rep]["layout_final"]
+            final_layout_lst.append(input_layout)
             factory_positions = input_layout["factory_positions"]
             terminal_pairs = co.translate_layout_circuit(circuit, input_layout)
             router = co.ShortestFirstRouterTGatesDyn(m = hc.m, n = hc.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = t)
@@ -122,17 +142,103 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
             #update routing graph
             vdp_layers_final_dyn = router.find_total_vdp_layers_dyn()
             num_final_dyn = len(vdp_layers_final_dyn)
+            num_final_lst.append(num_final_dyn)
 
             #add time
             time.append(num_final_dyn)
         logger.info(f"time = {time}")
         logger.info({"space": space, "time_mean": np.mean(time), "time_std": np.std(time)})
-        res_lst.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time)})
+        res_lst.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time), "num_init_lst": num_init_lst, "num_final_lst": num_final_lst, "init_layout_lst": init_layout_lst, "final_layout_lst": final_layout_lst, "instances": instances, "hc_params": hc_params})
         with Path(path).open("wb") as f:
             pickle.dump(res_lst, f)
 
     return res_lst
 
+def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:str, min_depth:int, path: str = "./results") -> None:
+    """Plots a Matrix Plot with variation in ratio and t. Also plots std.
+
+    Args:
+        res_lst (list[dict]): _description_
+        q (int): _description_
+        num_factories (int): _description_
+        layout_name (str): _description_
+        min_depth (int): _description_
+        path (str, optional): _description_. Defaults to "./results".
+    """
+    #extract data and put into matrix
+    instances = res_lst[0]["instances"] #index does not matter because accidentally stored redundantely.
+    hc_params = res_lst[0]["hc_params"]
+
+    #cut off instances at length of res_lst
+    instances = instances[:len(res_lst)] #just in case there where more instacnes included but the run stopped earlier
+
+    #filter instances with desired values for 
+    idx_include = []
+    for i, instance in enumerate(instances):
+        if instance["q"] == q and len(instance["factory_locs"]) == num_factories and instance["layout_name"] == layout_name and instance["min_depth"] == min_depth:
+            idx_include.append(i)
+    
+    #filter what range of t and ratio we get
+    dct_mat = [] #gather for each included idx the value for t, ratio and improvement
+    for i, instance in enumerate(instances):
+        if i in idx_include:
+            res = res_lst[i]
+            num_init_lst = res["num_init_lst"]
+            num_final_lst = res["num_final_lst"]    
+            improvements = []
+            for ni, nf in zip(num_init_lst, num_final_lst):
+                improvements.append((ni-nf)/ni)
+            mean_improvement = np.mean(improvements)
+            std_imrovement = np.std(improvements)
+            dct_mat.append({"i": i, "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "ratio": instance["ratio"]})
+    
+    available_t = set()
+    available_ratio = set()
+    for el in dct_mat:
+        available_t.add(el["t"])
+        available_ratio.add(el["ratio"])
+
+    data = np.zeros((len(available_ratio), len(available_t)))
+    data_std = np.zeros((len(available_ratio), len(available_t)))
+    available_ratio_dct = {ratio: i for i, ratio in enumerate(available_ratio)}
+    available_t_dct = {t: i for i, t in enumerate(available_t)}
+
+    for el in dct_mat:
+        ratio_idx = available_ratio_dct[el["ratio"]]
+        t_idx = available_t_dct[el["t"]]
+        data[ratio_idx, t_idx] = el["mean_improvement"]
+        data_std[ratio_idx, t_idx] = el["std_improvement"]
+
+    print("data", data)
+    print("data_std", data_std)
+
+    #plot
+    plt.figure(figsize=(6, 5))
+    im = plt.imshow(data, cmap="rainbow", aspect="auto")
+
+    #add text std for each tile
+    for i in range(data_std.shape[0]):  # Iterate rows
+        for j in range(data_std.shape[1]):  # Iterate columns
+            plt.text(j, i, str(round(data_std[i, j],5)), ha='center', va='center', color='black', fontsize=8)
+
+    plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
+    plt.yticks(ticks=list(available_ratio_dct.values()), labels=list(available_ratio_dct.keys()))
+
+    # Add colorbar
+    cbar = plt.colorbar(im)
+    cbar.set_label("Mean Layer Reduction $(n_i-n_f)/n_i$")  # Label for the colorbar
+
+    plt.xlabel("Reset time $t$")
+    plt.ylabel(r"$\alpha = \frac{CNOTS}{all}$")
+
+    metric = hc_params["metric"]
+    max_restarts = hc_params["max_restarts"]
+    max_iterations = hc_params["max_iterations"]
+
+    file_path = Path(path) / f"ratio_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_numfac{num_factories}_layout{layout_name}_depth{min_depth}.pdf"
+    plt.savefig(file_path)
+
+    plt.show()
     
 def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict], path: str = "./results") -> None:
     """Plots the results from collect_data_space_time.
