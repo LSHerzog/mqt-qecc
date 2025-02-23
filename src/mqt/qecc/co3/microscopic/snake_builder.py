@@ -2,12 +2,352 @@
 
 from __future__ import annotations
 
+import itertools
+from collections import Counter
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from matplotlib import cm
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
+
+
+class SnakeBuilderSC:
+    """Constructs a n-snake of distance d with a surface code in snake shape on the square lattice substate (leading to brickwall routing graph aka hex graph)."""
+    def __init__(
+            self,
+            g: nx.Graph,
+            positions_rough: list[list[list[tuple[int,int]]]],
+            positions_smooth: list[list[list[tuple[int,int]]]],
+            d: int
+    ) -> None:
+        """Initializes a SC n-snake.
+
+        Args:
+            g (nx.Graph): quadratic graph
+            positions_rough (list[list[list[tuple[int,int]]]]): Node positions constituting the rough boundaries
+            positions_smooth (list[list[list[tuple[int,int]]]]): Node positions constituting the smooth boundaries
+            d (int): distance
+        """
+        self.g = g
+        self.positions_rough = positions_rough
+        self.positions_smooth = positions_smooth
+        self.d = d
+        assert len(positions_smooth) == 2, "To encode 1 logical qubit there must be 2 smooth boundaries."
+        assert len(positions_rough) == 2, "To encode 1 logical qubit there must be 2 rough boundaries."
+        dist = min([len(el) for el in positions_rough] + [len(el) for el in positions_smooth]) - 1 #-1 because we count edges not nodes
+        assert dist == d, f"Distance d={dist} does not coincide with the geometry of the rough and smooth positions."
+
+
+
+
+    def fill_snake(self) -> list[list[tuple[int,int]]]:
+        """Adds the inner nodes given by the boundary `positions`. Sweeps through rows of lattice.
+
+        Returns:
+            list[list[tuple[int,int]]]: Positions of ALL nodes in the snakes.
+        """
+        positions_smooth_flattened = [pos for sublist in self.positions_smooth for pos in sublist]
+        positions_rough_flattened = [pos for sublist in self.positions_rough for pos in sublist]
+        positions = list(set(positions_smooth_flattened + positions_rough_flattened))#remove duplicate elements because corners appear twice.
+        inside_nodes = set()
+
+        x_values = {x for x, _ in self.g.nodes()}
+        y_values = {y for _, y in self.g.nodes()}
+
+        #sweep row by row of the lattice
+        for y in sorted(y_values):
+            inside = False
+            temp_nodes = []
+            for x in sorted(x_values):
+                node = (x,y)
+                if node in positions:
+                    if inside:
+                        inside_nodes.update(temp_nodes)
+                    inside = not inside
+                    temp_nodes = []
+                elif inside:
+                    temp_nodes.append(node)
+
+        self.inner_nodes = list(inside_nodes)
+        self.boundary_nodes = list(positions)
+        
+        return positions + list(inside_nodes)
+    
+    @staticmethod
+    def neighbors_ver_hor(node1: tuple[int,int], node2: tuple[int,int]) -> bool:
+        """Checks whether two nodes are neighbors.
+
+        Vertical and horizontal neighbors. Not based on initial graph structure because no diagonal edges present.
+
+        Args:
+            node1 (tuple[int,int]): node1
+            node2 (tuple[int,int]): node2
+
+        Returns:
+            bool: whether both are neighbors.
+        """
+        if abs(node1[0] - node2[0])==1 and node1[1] == node2[1]: #vertical neighbors
+            return True
+        if abs(node1[1] - node2[1])==1 and node1[0] == node2[0]: #horizontal neighbors
+            return True
+        return False
+
+    @staticmethod
+    def neighbors_diag(node1: tuple[int,int], node2: tuple[int,int]) -> bool:
+        """Checks whether two nodes are neighbors.
+
+        Diagonal. Not based on initial graph structure because no diagonal edges present.
+
+        Args:
+            node1 (tuple[int,int]): node1
+            node2 (tuple[int,int]): node2
+
+        Returns:
+            bool: whether both are neighbors.
+        """
+        return bool(abs(node1[1] - node2[1]) == 1 and abs(node1[0] - node2[0]) == 1) #diagonal neighbors or no neighbors at all
+
+
+    def collect_qubit_positions(self) -> list[tuple[tuple[int,int], tuple[int,int]]]:
+        """Collect the edges defining the qubits we need, depending on rough/smooth edges.
+        
+        If qubits are placed on the diagonal, add the corresponding edge to self.g 
+
+        Returns:
+            list[tuple[tuple[int,int], tuple[int,int]]]: List of edges where qubits are placed.
+        """
+        qubit_edges = []
+        
+        #inner qubits
+        for pair in itertools.combinations(self.inner_nodes, 2): #could be done more systematically
+            neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1])
+            if neighbor_bool:
+                qubit_edges.append(pair)
+                if pair not in self.g.edges():
+                    self.g.add_edge(*pair)
+
+        #qubits on edges between inner and boundary vertices
+        for pair in itertools.product(self.boundary_nodes, self.inner_nodes):
+            neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1])
+            if neighbor_bool:
+                qubit_edges.append(pair)
+                if pair not in self.g.edges():
+                    self.g.add_edge(*pair)
+
+        #smooth boundary qubits (no qubits added between vertices on the rough boundary)
+        for smooth_boundary in self.positions_smooth:
+            for pair in itertools.combinations(smooth_boundary, 2):
+                neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1]) or self.neighbors_diag(pair[0], pair[1])
+                if neighbor_bool:
+                    qubit_edges.append(pair)
+                    if pair not in self.g.edges():
+                        self.g.add_edge(*pair)
+
+        
+        #also check neighborhood between the boundaries (you might miss some qubit placements otherwise)
+        for boundary_pair in itertools.product(self.positions_rough, self.positions_smooth):
+            #make sure that the positions_rough list and the positions_smooth are disjoint (remove overlapping corner elements from one of the lists)
+            set1 = set(boundary_pair[0])
+            set2 = set(boundary_pair[1])
+            common_corners = set1 & set2
+            boundary1 = list(set1-common_corners)
+            boundary2 = list(set2-common_corners)
+            for pair in itertools.product(boundary1, boundary2):
+                neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1]) #or self.neighbors_diag(pair[0], pair[1])
+                #need an additional constraint which checks that the pair does not connect two nodes on the rough boundary
+                for rough_boundary in self.positions_rough:
+                    pairs_rough = list(itertools.combinations(rough_boundary,2))
+                    #print("pairs_rough", pairs_rough)
+                    if (pair[0], pair[1]) in pairs_rough or (pair[1], pair[0]) in pairs_rough:
+                        rough_bool = True
+                    else:
+                        rough_bool = False
+                if neighbor_bool and not rough_bool:
+                    qubit_edges.append(pair)
+                    if pair not in self.g.edges():
+                        self.g.add_edge(*pair)
+        
+
+        self.qubit_edges = qubit_edges
+        return qubit_edges
+
+    def gen_stars(self) -> list[list[tuple[tuple[int,int], tuple[int,int]]]]:
+        """Generates star operators.
+
+        Returns:
+            list[list[tuple[tuple[int,int], tuple[int,int]]]]: List of lists of edges, where each list determines a star operator.
+        """
+        stars = []
+        nodes = self.boundary_nodes + self.inner_nodes #all nodes
+        for node in nodes:
+            #collect all qubits which are connected to this node
+            temp_qubits = [edge for edge in self.qubit_edges if edge[0] == node or edge[1] == node]
+            if len(temp_qubits)>2:
+                stars.append(temp_qubits)
+        self.stars = stars
+        return stars
+    
+    def gen_plaquettes(self) -> list[list[tuple[tuple[int,int], tuple[int,int]]]]:
+        """Generates Plaquette Operators.
+
+        Returns:
+            list[list[tuple[tuple[int,int], tuple[int,int]]]]: _description_
+        """
+        plaquettes = []
+        nodes = self.boundary_nodes + self.inner_nodes #all nodes
+        #since we check the nodes for being in the upper left corner, you can loose some plaquettes. hence add more nodes to minimum x and y, even though there will be useless checks
+        min_x = min(t[0] for t in nodes)
+        min_y = min(t[1] for t in nodes)
+        collected = []
+        i, j = 0, 0
+
+        while True:
+            point = (min_x + i, min_y + j)
+            if point in set(nodes):
+                j = 0
+                i += 1
+                continue
+            collected.append(point)
+
+            j += 1
+            if j > max(t[1] for t in nodes): 
+                j = 0
+                i += 1
+            if i > max(t[0] for t in nodes): 
+                break
+        nodes += collected
+
+        #find all squares in the snake
+        #for each square, check where qubits are and add to plaquettes (number of qubits can be smaller than 4)
+        for node in nodes:
+            #create square of nodes with node in upper left corner. 
+            square = [node, (node[0], node[1]+1), (node[0]+1, node[1]+1), (node[0]+1, node[1])] #cyclically aligned
+            #edges_square = list(zip(square, square[1:] + [square[0]]))
+            edges_square = list(itertools.combinations(square, 2))#also diagonals
+            #check which qubits (edges) are contained
+            #order edges square and qubit edges
+            #edges_square = sorted(edges_square)
+            #qubit_edges = sorted(self.qubit_edges)
+            plaquette = [edge for edge in edges_square if (edge[0], edge[1]) in self.qubit_edges or (edge[1], edge[0]) in self.qubit_edges]
+            #add to plaquettes if more than 1 qubit contained
+            if len(plaquette)>1:
+                plaquettes.append(plaquette)
+        self.plaquettes = plaquettes
+        return plaquettes
+
+    def create_stabs(self) -> tuple[list[list[tuple[tuple[int,int], tuple[int,int]]]], list[list[tuple[tuple[int,int], tuple[int,int]]]]]:
+        """Summarizes all Methods here."""
+        _ = self.fill_snake()
+        _ = self.collect_qubit_positions()
+        _ = self.gen_stars()
+        _ = self.gen_plaquettes()
+        
+        q = len(self.qubit_edges)
+        lenstars = len(self.stars)
+        lenplaq = len(self.plaquettes)
+        assert q - lenstars - lenplaq == 1, f"Your stabilizers are wrong. They should create 1 logical qubit but they yield {q - lenstars - lenplaq} instead."
+
+        return self.plaquettes, self.stars
+
+        
+        #add check whether ther are q-num stabs = 1
+    def gen_checks(self) -> tuple[np.ndarray, np.ndarray, dict]:
+        """Return checks and translation dict."""
+        trans_dict = {edge: i for i, edge in enumerate(self.qubit_edges)} #both edge orderings should be included to make sure that we get no key errors
+        trans_dict2 = {(edge[1], edge[0]): i for i, edge in enumerate(self.qubit_edges)}
+        trans_dict |= trans_dict2
+        q = len(self.qubit_edges)
+        hz = np.zeros((len(self.plaquettes), q), dtype=int)
+        for row, plaquette in enumerate(self.plaquettes):
+            translated_plaquette = [int(trans_dict[edge]) for edge in plaquette]
+            for el in translated_plaquette:
+                hz[row, el] = 1
+        hx = np.zeros((len(self.stars), q), dtype=int)
+        for row, star in enumerate(self.stars):
+            translated_star = [int(trans_dict[edge]) for edge in star]
+            for el in translated_star:
+                hx[row, el] = 1
+        self.trans_dict = trans_dict
+        return hx, hz, trans_dict
+
+    def plot_stabs(self, opz: list | None = None, opx: list | None = None) -> None:
+        """Plots plaquettes and star operators as well as the snake itself.
+        
+        opz and opx are the logical operators retrieved via mqt.qecc.CSSCode which are already translated as edges on the graph.
+        """
+        pos = {node: (node[0], -node[1]) for node in self.g.nodes()}  # Adjust for proper display
+
+        midpoints = [((x1 + x2) / 2, -(y1 + y2) / 2) for (x1, y1), (x2, y2) in self.qubit_edges]
+
+        plt.figure(figsize=(8,8))
+        nx.draw(self.g, pos, with_labels=True, node_size=100, edge_color="lightgray", font_size = 8)
+
+        for star in self.stars:
+            all_nodes = [node for edge in star for node in edge]
+            node_counts = Counter(all_nodes)
+            central_node = max(node_counts, key=node_counts.get)
+            for u,v in star:
+                if u == central_node:
+                    start, end = u, v
+                elif v == central_node:
+                    start, end = v, u
+                else:
+                    continue 
+
+                midpoint = ((pos[start][0] + pos[end][0]) / 2, (pos[start][1] + pos[end][1]) / 2)
+                
+                # Plot the half-edge from the central node to the midpoint
+                plt.plot([pos[start][0], midpoint[0]], [pos[start][1], midpoint[1]], color="orange", linewidth=3, label="X Star")
+
+        ax = plt.gca()
+        for plaquette in self.plaquettes:
+            square = {node for edge in plaquette for node in edge}
+            square_pos = [pos[node] for node in square] 
+            square_pos = convex_hull(square_pos)
+            #shrink the polygon a little
+            square_pos = np.array(square_pos)
+            centroid = square_pos.mean(axis=0)
+            factor = 0.6
+            square_pos = centroid + factor * (square_pos - centroid)
+            polygon = Polygon(square_pos, closed=True, color="green", alpha=0.3, label="Z Face") 
+            ax.add_patch(polygon)
+
+        nodes = self.boundary_nodes + self.inner_nodes #all nodes
+        x_mid, y_mid = zip(*midpoints)  # Extract x and y coordinates
+        plt.scatter(x_mid, y_mid, color="red", s=20, zorder=3)  # Small blue dots
+        nx.draw_networkx_nodes(self.g, pos, nodelist=nodes, node_color="blue", node_size=100)
+
+        #integer labels
+        for original_label, new_label in self.trans_dict.items():
+            if original_label[0] in pos and original_label[1] in pos:  # Ensure both nodes exist
+                x1, y1 = pos[original_label[0]]
+                x2, y2 = pos[original_label[1]]
+
+                # Compute the midpoint
+                mid_x = (x1 + x2) / 2
+                mid_y = (y1 + y2) / 2
+
+                # Plot the text at the midpoint
+                plt.text(
+                    mid_x, mid_y, str(new_label), fontsize=8,
+                    color="green", ha="center", va="center"
+                )
+
+        if opx is not None:
+            nx.draw_networkx_edges(self.g, pos, edgelist=opx, edge_color="teal", width=5, alpha= 0.7, label = "$X_L$")
+        if opz is not None:
+            nx.draw_networkx_edges(self.g, pos, edgelist=opz, edge_color="blueviolet", width=5, alpha = 0.7, label = "$Z_L$")
+
+
+        #no duplicates in legend
+        handles, labels = plt.gca().get_legend_handles_labels()
+        unique_legend = dict.fromkeys(labels, None)  # Removes duplicates while keeping order
+        unique_handles = [handles[labels.index(label)] for label in unique_legend]
+        plt.legend(unique_handles, unique_legend.keys())
+        plt.show()
+
 
 
 class SnakeBuilderSTDW:

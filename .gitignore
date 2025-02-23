@@ -174,3 +174,5 @@ out/build
 
 node_modules/
 wheelhouse/
+
+./src/mqt/qecc/co3/plots/results
