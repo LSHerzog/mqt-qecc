@@ -39,9 +39,6 @@ class SnakeBuilderSC:
         dist = min([len(el) for el in positions_rough] + [len(el) for el in positions_smooth]) - 1 #-1 because we count edges not nodes
         assert dist == d, f"Distance d={dist} does not coincide with the geometry of the rough and smooth positions."
 
-
-
-
     def fill_snake(self) -> list[list[tuple[int,int]]]:
         """Adds the inner nodes given by the boundary `positions`. Sweeps through rows of lattice.
 
@@ -113,62 +110,27 @@ class SnakeBuilderSC:
     def collect_qubit_positions(self) -> list[tuple[tuple[int,int], tuple[int,int]]]:
         """Collect the edges defining the qubits we need, depending on rough/smooth edges.
         
-        If qubits are placed on the diagonal, add the corresponding edge to self.g 
+        Only qubits on horizontal/vertical edges, no new diagonal edges added.
 
         Returns:
             list[tuple[tuple[int,int], tuple[int,int]]]: List of edges where qubits are placed.
         """
         qubit_edges = []
         
-        #inner qubits
-        for pair in itertools.combinations(self.inner_nodes, 2): #could be done more systematically
-            neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1])
-            if neighbor_bool:
-                qubit_edges.append(pair)
-                if pair not in self.g.edges():
-                    self.g.add_edge(*pair)
-
-        #qubits on edges between inner and boundary vertices
-        for pair in itertools.product(self.boundary_nodes, self.inner_nodes):
-            neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1])
-            if neighbor_bool:
-                qubit_edges.append(pair)
-                if pair not in self.g.edges():
-                    self.g.add_edge(*pair)
-
-        #smooth boundary qubits (no qubits added between vertices on the rough boundary)
-        for smooth_boundary in self.positions_smooth:
-            for pair in itertools.combinations(smooth_boundary, 2):
-                neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1]) or self.neighbors_diag(pair[0], pair[1])
-                if neighbor_bool:
-                    qubit_edges.append(pair)
-                    if pair not in self.g.edges():
-                        self.g.add_edge(*pair)
-
-        
-        #also check neighborhood between the boundaries (you might miss some qubit placements otherwise)
-        for boundary_pair in itertools.product(self.positions_rough, self.positions_smooth):
-            #make sure that the positions_rough list and the positions_smooth are disjoint (remove overlapping corner elements from one of the lists)
-            set1 = set(boundary_pair[0])
-            set2 = set(boundary_pair[1])
-            common_corners = set1 & set2
-            boundary1 = list(set1-common_corners)
-            boundary2 = list(set2-common_corners)
-            for pair in itertools.product(boundary1, boundary2):
-                neighbor_bool = self.neighbors_ver_hor(pair[0], pair[1]) #or self.neighbors_diag(pair[0], pair[1])
-                #need an additional constraint which checks that the pair does not connect two nodes on the rough boundary
-                for rough_boundary in self.positions_rough:
-                    pairs_rough = list(itertools.combinations(rough_boundary,2))
-                    #print("pairs_rough", pairs_rough)
-                    if (pair[0], pair[1]) in pairs_rough or (pair[1], pair[0]) in pairs_rough:
-                        rough_bool = True
-                    else:
-                        rough_bool = False
-                if neighbor_bool and not rough_bool:
-                    qubit_edges.append(pair)
-                    if pair not in self.g.edges():
-                        self.g.add_edge(*pair)
-        
+        nodes = self.boundary_nodes + self.inner_nodes #all nodes
+        #add qubits on each horizontal/vertical edge which is contained in the snake
+        for edge in itertools.combinations(nodes, 2):
+            neighborhood_bool = self.neighbors_ver_hor(edge[0], edge[1])
+            if neighborhood_bool:
+                qubit_edges.append(edge)
+   
+        #remove the qubits on rough boundary (only remove if horizontal or vertical, because diagonal rough boundaries has no additonal qubits)
+        for rough_b in self.positions_rough:
+            for edge in itertools.combinations(rough_b, 2):
+                if edge in qubit_edges:
+                    qubit_edges.remove(edge)
+                elif (edge[1], edge[0]) in qubit_edges:
+                    qubit_edges.remove((edge[1], edge[0]))
 
         self.qubit_edges = qubit_edges
         return qubit_edges
@@ -184,10 +146,35 @@ class SnakeBuilderSC:
         for node in nodes:
             #collect all qubits which are connected to this node
             temp_qubits = [edge for edge in self.qubit_edges if edge[0] == node or edge[1] == node]
-            if len(temp_qubits)>2:
+            if len(temp_qubits)>1:
                 stars.append(temp_qubits)
-        self.stars = stars
-        return stars
+        #if star is placed on rough boundary, it must be removed
+        stars_new = []
+        for star in stars:
+            #print("star", star)
+            star_set = {tup for pair in star for tup in pair} #flatten edges such that ndoes can be compared
+            #print("star_set", star_set)
+            lst_on_rough = []
+            for rough_b in self.positions_rough: #through both rough boundaries
+                #print("rough_b", rough_b)
+                #common_el = sum(1 for t in star_set if t in rough_b)
+                #check whether the central node of the star is on the rough boundary
+                all_nodes = [node for edge in star for node in edge]
+                node_counts = Counter(all_nodes)
+                central_node = max(node_counts, key=node_counts.get)
+                common_el = central_node in rough_b
+                #print("comon el", common_el)
+                lst_on_rough.append(common_el)
+            #print("lst_on_rough", lst_on_rough)
+            assert sum(1 for x in lst_on_rough if x != 0) <= 1, "The star has overlaps with both rough boundaries, this cannot be."
+            #horizontal rough remove: weigh3 star with 2 overlapping nodes on rough b
+            if (sum(lst_on_rough)==1 and len(star)==2):#(sum(lst_on_rough)==2 and len(star)==3) #the weight3 case is actually not necessary right
+                pass
+            else:
+                stars_new.append(star)
+
+        self.stars = stars_new
+        return stars_new
     
     def gen_plaquettes(self) -> list[list[tuple[tuple[int,int], tuple[int,int]]]]:
         """Generates Plaquette Operators.
@@ -234,8 +221,36 @@ class SnakeBuilderSC:
             #add to plaquettes if more than 1 qubit contained
             if len(plaquette)>1:
                 plaquettes.append(plaquette)
-        self.plaquettes = plaquettes
-        return plaquettes
+
+        plaquettes_new = []
+        #remove weight-2 plaquettes on the smooth boundary if there are any (on diagonal)
+        for plaquette in plaquettes:
+            if len(plaquette) == 2: #2edges= 2 qubits
+                #print("plaquette", plaquette)
+                plaquette_flat = [node for edge in plaquette for node in edge]
+                #print("plaquette_flat", plaquette_flat)
+                #only check for those lements which are NOT the central qubit
+                node_counts = Counter(plaquette_flat)
+                #print("node_counts", node_counts)
+                central_node = max(node_counts, key=node_counts.get)
+                #print("central_node", central_node)
+                plaquette_flat = [node for node in plaquette_flat if node != central_node]
+                #print("plaquette_flat", plaquette_flat)
+                plaquette_set = set(plaquette_flat)
+                lst_on_smooth = []
+                for smooth_b in self.positions_smooth:
+                    common_el = sum(1 for t in plaquette_set if t in smooth_b)
+                    lst_on_smooth.append(common_el)
+                assert sum(1 for x in lst_on_smooth if x != 0) <= 1, "The plaquette has overlaps with both rough boundaries, this cannot be."
+                if sum(lst_on_smooth) == 2:
+                    pass
+                else:
+                    plaquettes_new.append(plaquette)
+            else:
+                plaquettes_new.append(plaquette)
+        
+        self.plaquettes = plaquettes_new
+        return plaquettes_new
 
     def create_stabs(self) -> tuple[list[list[tuple[tuple[int,int], tuple[int,int]]]], list[list[tuple[tuple[int,int], tuple[int,int]]]]]:
         """Summarizes all Methods here."""
@@ -248,6 +263,7 @@ class SnakeBuilderSC:
         lenstars = len(self.stars)
         lenplaq = len(self.plaquettes)
         assert q - lenstars - lenplaq == 1, f"Your stabilizers are wrong. They should create 1 logical qubit but they yield {q - lenstars - lenplaq} instead."
+        #print("logical qubits", q - lenstars - lenplaq)
 
         return self.plaquettes, self.stars
 
