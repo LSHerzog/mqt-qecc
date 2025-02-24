@@ -154,6 +154,134 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
 
     return res_lst
 
+def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_depth:int, path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
+    """Plots a Matrix Plot with variation in number of factories and t. Also plots std.
+
+    Args:
+        res_lst (list[Dict]): _description_
+        q (int): _description_
+        ratio (float): _description_
+        layout_name (str): _description_
+        min_depth (int): _description_
+        path (str, optional): _description_. Defaults to "./results".
+        size (tuple[int,int]): size of plot
+    """
+    #extract data and put into matrix
+    instances = res_lst[0]["instances"] #index does not matter because accidentally stored redundantely.
+    hc_params = res_lst[0]["hc_params"]
+
+    #cut off instances at length of res_lst
+    instances = instances[:len(res_lst)] #just in case there where more instacnes included but the run stopped earlier
+
+    #filter instances with desired values for 
+    idx_include = []
+    for i, instance in enumerate(instances):
+        if instance["q"] == q and instance["ratio"] == ratio and instance["layout_name"] == layout_name and instance["min_depth"] == min_depth:
+            idx_include.append(i)
+    
+    #filter what range of t and ratio we get
+    dct_mat = [] #gather for each included idx the value for t, ratio and improvement
+    for i, instance in enumerate(instances):
+        if i in idx_include:
+            res = res_lst[i]
+            num_init_lst = res["num_init_lst"]
+            num_final_lst = res["num_final_lst"]    
+            improvements = []
+            for ni, nf in zip(num_init_lst, num_final_lst):
+                improvements.append((ni-nf)/ni)
+            mean_improvement = np.mean(improvements)
+            std_imrovement = np.std(improvements)
+            dct_mat.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"]})
+    
+    available_t = set()
+    available_f = set()
+    for el in dct_mat:
+        available_t.add(el["t"])
+        available_f.add(len(el["factory_locs"]))
+
+    data = np.zeros((len(available_f), len(available_t)))
+    data_std = np.zeros((len(available_f), len(available_t)))
+    data_abs = np.zeros((len(available_f), len(available_t)))
+    data_abs_std = np.zeros((len(available_f), len(available_t)))
+    available_f_dct = {f: i for i, f in enumerate(available_f)}
+    available_t_dct = {t: i for i, t in enumerate(available_t)}
+
+    #order the entries
+    available_t = sorted(available_t)
+    available_f = sorted(available_f)
+
+    available_f_dct = {f: i for i, f in enumerate(available_f)}
+    available_t_dct = {t: i for i, t in enumerate(available_t)}
+
+    for el in dct_mat:
+        f_idx = available_f_dct[len(el["factory_locs"])]
+        t_idx = available_t_dct[el["t"]]
+        data[f_idx, t_idx] = el["mean_improvement"]
+        data_std[f_idx, t_idx] = el["std_improvement"]
+        data_abs[f_idx, t_idx] = el["mean_final_layers"]
+        data_abs_std[f_idx, t_idx] = el["std_final_layers"]
+
+    print("data", data)
+    print("data_abs", data_abs)
+
+    #---------plot improvements-------------
+    plt.figure(figsize=size)
+    im = plt.imshow(data, cmap="rainbow", aspect="auto")
+
+    #add text std for each tile
+    for i in range(data_std.shape[0]):  # Iterate rows
+        for j in range(data_std.shape[1]):  # Iterate columns
+            plt.text(j, i, str(round(data_std[i, j],5)), ha="center", va="center", color="black", fontsize=8)
+
+    plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
+    plt.yticks(ticks=list(available_f_dct.values()), labels=list(available_f_dct.keys()))
+
+    # Add colorbar
+    cbar = plt.colorbar(im)
+    cbar.set_label("Mean Layer Reduction $(n_i-n_f)/n_i$")  # Label for the colorbar
+
+    plt.xlabel("Reset time $t$")
+    plt.ylabel("Number of factories")
+
+    metric = hc_params["metric"]
+    max_restarts = hc_params["max_restarts"]
+    max_iterations = hc_params["max_iterations"]
+
+    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    plt.savefig(file_path)
+
+    plt.show()
+    plt.cla()
+
+    #---------plot improvements-------------
+    plt.figure(figsize=size)
+    im = plt.imshow(data_abs, cmap="rainbow", aspect="auto")
+
+    #add text std for each tile
+    for i in range(data_abs_std.shape[0]):  # Iterate rows
+        for j in range(data_abs_std.shape[1]):  # Iterate columns
+            plt.text(j, i, str(round(data_std[i, j],5)), ha="center", va="center", color="black", fontsize=8)
+
+    plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
+    plt.yticks(ticks=list(available_f_dct.values()), labels=list(available_f_dct.keys()))
+
+    # Add colorbar
+    cbar = plt.colorbar(im)
+    cbar.set_label("Number of Layers")  # Label for the colorbar
+
+    plt.xlabel("Reset time $t$")
+    plt.ylabel("Number of factories")
+
+    metric = hc_params["metric"]
+    max_restarts = hc_params["max_restarts"]
+    max_iterations = hc_params["max_iterations"]
+
+    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    plt.savefig(file_path)
+
+    plt.show()
+    
+
 def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:str, min_depth:int, path: str = "./results") -> None:
     """Plots a Matrix Plot with variation in ratio and t. Also plots std.
 
@@ -203,6 +331,10 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
     available_ratio_dct = {ratio: i for i, ratio in enumerate(available_ratio)}
     available_t_dct = {t: i for i, t in enumerate(available_t)}
 
+    #order the entries
+    available_t = sorted(available_t)
+    available_ratio = sorted(available_ratio)
+
     for el in dct_mat:
         ratio_idx = available_ratio_dct[el["ratio"]]
         t_idx = available_t_dct[el["t"]]
@@ -240,7 +372,7 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
 
     plt.show()
     
-def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict], path: str = "./results") -> None:
+def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict], path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
     """Plots the results from collect_data_space_time.
 
     Args:
@@ -248,11 +380,12 @@ def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict],
         hc_params (dict): Hyperparameters used in the optimization.
         res_lst (list[dict]): Results containing space and time metrics.
         path (str, optional): Path to save the plot. Defaults to "./results".
+        size (tuple[int,int]): Size of figure
     """
     assert len(instances) == len(res_lst), "instances and res_lst do not have the same length."
     colors = plt.cm.rainbow(np.linspace(0, 1, 7))
 
-    _, ax = plt.subplots()
+    _, ax = plt.subplots(figsize=size)
 
     # Store unique legend entries
     legend_handles = {}
@@ -263,41 +396,65 @@ def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict],
         time_std = result["time_std"]
         
         q = instance["q"]
-        t = instance["t"]
+        #t = instance["t"]
         ratio = instance["ratio"]
-        num_factories = len(instance["factory_locs"])
+        #num_factories = len(instance["factory_locs"])
         layout_name = instance["layout_name"]
 
         # Define marker and color for each layout type
         layout_styles = {
-            "hex": {"color": colors[0], "marker": "o", "label": "hex"},
-            "row": {"color": colors[1], "marker": "x", "label": "row"},
-            "pair": {"color": colors[2], "marker": "*", "label": "pair"},
-            "sparse": {"color": colors[3], "marker": "v", "label": "sparse"},
+            "hex"+str(24): {"color": colors[0], "marker": "o", "label": "hex, q=24"},
+            "hex"+str(42): {"color": colors[0], "marker": "x", "label": "hex, q=42"},
+            "hex"+str(60): {"color": colors[0], "marker": "v", "label": "hex, q=60"},
+
+            "row"+str(24): {"color": colors[1], "marker": "o", "label": "row, q=24"},
+            "row"+str(42): {"color": colors[1], "marker": "x", "label": "row, q=42"},
+            "row"+str(60): {"color": colors[1], "marker": "v", "label": "row, q=60"},
+
+            "pair"+str(24): {"color": colors[2], "marker": "o", "label": "pair, q=24"},
+            "pair"+str(42): {"color": colors[2], "marker": "x", "label": "pair, q=42"},
+            "pair"+str(60): {"color": colors[2], "marker": "v", "label": "pair, q=60"},
+
+            #do not plot sparse result
+            #"sparse"+str(24): {"color": colors[3], "marker": "o", "label": "sparse, q=24"},
+            #"row": {"color": colors[1], "marker": "x", "label": "row"},
+            #"pair": {"color": colors[2], "marker": "*", "label": "pair"},
+            #"sparse": {"color": colors[3], "marker": "v", "label": "sparse"},
         }
 
-        if layout_name in layout_styles:
-            style = layout_styles[layout_name]
+        layout_name_label = layout_name + str(q)
+
+        if layout_name_label in layout_styles:
+            style = layout_styles[layout_name_label]
 
             # Plot the point
             ax.errorbar(time_mean, space, xerr=time_std, color=style["color"], fmt=style["marker"])
 
             # Add label only once per layout type
-            if layout_name not in legend_handles:
-                legend_handles[layout_name] = Line2D(
-                    [0], [0], color=style["color"], marker=style["marker"], linestyle="None", label=style["label"]
-                )
+            legend_handles[layout_name_label] = Line2D(
+                [0], [0], color=style["color"], marker=style["marker"], linestyle="None", label=style["label"]
+            )
 
-        # Format the label with new lines
-        text_label = f"q={q}\n t={t}\n #f={num_factories} \n ratio={ratio}"
-        ax.text(time_mean, space + 0.03, text_label, fontsize=8, ha="center", va="bottom")
+            # Format the label with new lines
+            #text_label = f"q={q}\n t={t}\n #f={num_factories} \n ratio={ratio}"
+            text_label = f"r={ratio}"#f"q={q} \n r={ratio}"
+            ax.text(time_mean, space + 0.05, text_label, fontsize=8, ha="center", va="bottom")
 
     # Ensure texts are not outside the plot
     y_min, y_max = ax.get_ylim() 
     ax.set_ylim(y_min, y_max + 0.03*y_max)
 
     # Add unique legend entries
-    ax.legend(handles=list(legend_handles.values()))
+    legend = ax.legend(
+        handles=list(legend_handles.values()), 
+        loc="upper center", 
+        bbox_to_anchor=(0.5, 1.4),  # Moves the legend above the plot, adapt this for other plots
+        fontsize=10, 
+        ncol=3,  # Adjust the number of columns as needed
+        fancybox = False
+    )
+    legend.get_frame().set_linewidth(0.8)
+    legend.get_frame().set_edgecolor("black")
 
     ax.set_xlabel("Time (#Layers)")
     ax.set_ylabel("Space (# logical data and ancilla qubits)")
