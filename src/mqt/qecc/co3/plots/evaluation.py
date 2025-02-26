@@ -4,9 +4,13 @@ import logging
 import pickle
 from pathlib import Path
 
+import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import cm
 from matplotlib.lines import Line2D
+from mpl_toolkits.mplot3d import Axes3D
+import itertools
 
 import mqt.qecc.co3 as co
 
@@ -27,8 +31,13 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     instances_set = {"q", "t", "min_depth", "tgate", "ratio", "custom_layout", "factory_locs", "layout_type", "layout_name"}
+    instances_set_ext = {"q", "t", "min_depth", "tgate", "ratio", "custom_layout", "factory_locs", "layout_type", "layout_name", "circuit_type"} #additional circuit_type
     for instance in instances:
-        assert set(instance.keys()) == instances_set, "Wrong input for `instances`."
+        assert set(instance.keys()) == instances_set or set(instance.keys()) == instances_set_ext, "Wrong input for `instances`."
+    #if no "circuit type" given, choose standard
+    for i, instance in enumerate(instances):
+        if "circuit_type" not in set(instance.keys()):
+            instances[i].update({"circuit_type": "random"})
     hc_par_set = {"metric", "max_restarts", "max_iterations", "routing", "optimize_factories", "free_rows", "parallel", "processes"}
     assert set(hc_params.keys()) == hc_par_set, "Wrong input for `hc_params`."
     # ! layout_type for hc must be manual
@@ -38,22 +47,54 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
     #thus initialize with first instance's value and only change them if those values differ for the new instance
     circuits = []
     for _ in range(reps):
-        circuit = co.generate_random_circuit(instances[0]["q"], instances[0]["min_depth"], instances[0]["tgate"], instances[0]["ratio"])
+        if instances[0]["circuit_type"]=="random":
+            circuit = co.generate_random_circuit(instances[0]["q"], instances[0]["min_depth"], instances[0]["tgate"], instances[0]["ratio"])
+        elif instances[0]["circuit_type"]=="parallelmax":
+            assert instances[0]["tgate"] is False, "For Maximally parallel circuit type, we can only do CNOTs."
+            assert instances[0]["ratio"] == 1.0, "For Maximally parallel circuit type, the ratio must be 1.0 as we can do only CNOTS"
+            circuit = co.generate_max_parallel_circuit(q=instances[0]["q"], min_depth=instances[0]["min_depth"])
+        elif instances[0]["circuit_type"]=="sequential":
+            assert instances[0]["tgate"] is False, "For seq. circuit type, we can only do CNOTs."
+            assert instances[0]["ratio"] == 1.0, "For seq. circuit type, the ratio must be 1.0 as we can do only CNOTS"
+            layer_size = 2
+            circuit = co.generate_min_parallel_circuit(q=instances[0]["q"], min_depth = instances[0]["min_depth"], layer_size=layer_size)
+        else:
+            msg = "No other circuit types than random, sequential, parallelmax"
+            raise NotImplementedError(msg)
         circuits.append(circuit)
+        print("Current circuits")
+        for circ in circuits:
+            print(circ)  
 
     for l, instance in enumerate(instances):
         logger = logging.getLogger(__name__)
         
-        #check whether new values for q, min_depth, tgate, ratio. If yes sample new circuits, otherwise keep them
+        #check whether new values for q, min_depth, tgate, ratio and circuit_type. If yes sample new circuits, otherwise keep them
         if l!=0: 
-            if instance["q"] == instances[l-1]["q"] and instance["min_depth"] == instances[l-1]["min_depth"] and instance["tgate"] == instances[l-1]["tgate"] and instance["ratio"] == instances[l-1]["ratio"]:
+            if instance["q"] == instances[l-1]["q"] and instance["min_depth"] == instances[l-1]["min_depth"] and instance["tgate"] == instances[l-1]["tgate"] and instance["ratio"] == instances[l-1]["ratio"] and instance["circuit_type"] == instances[l-1]["circuit_type"]:
                 logger.info("previous circuits kept")
             else:
                 circuits = []
                 for _ in range(reps):
-                    circuit = co.generate_random_circuit(instance["q"], instance["min_depth"], instance["tgate"], instance["ratio"])
-                    circuits.append(circuit)  
-                logger.info("new circuits sampled")              
+                    if instance["circuit_type"]=="random":
+                        circuit = co.generate_random_circuit(instance["q"], instance["min_depth"], instance["tgate"], instance["ratio"])
+                    elif instance["circuit_type"]=="parallelmax":
+                        assert instance["tgate"] is False, "For Maximally parallel circuit type, we can only do CNOTs."
+                        assert instance["ratio"] == 1.0, "For Maximally parallel circuit type, the ratio must be 1.0 as we can do only CNOTS"
+                        circuit = co.generate_max_parallel_circuit(instance["q"], instance["min_depth"])
+                    elif instance["circuit_type"]=="sequential":
+                        assert instance["tgate"] is False, "For seq. circuit type, we can only do CNOTs."
+                        assert instance["ratio"] == 1.0, "For seq. circuit type, the ratio must be 1.0 as we can do only CNOTS"
+                        layer_size = 2
+                        circuit = co.generate_min_parallel_circuit(q=instance["q"], min_depth = instance["min_depth"], layer_size=layer_size)
+                    else:
+                        msg = "No other circuit types than random, sequential, parallelmax"
+                        raise NotImplementedError(msg)
+                    circuits.append(circuit)
+                logger.info("new circuits sampled")  
+            print("Current circuits")
+            for circ in circuits:
+                print(circ)            
 
 
         logger.info(f"=======Instance {l}=======")
@@ -148,11 +189,134 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
             time.append(num_final_dyn)
         logger.info(f"time = {time}")
         logger.info({"space": space, "time_mean": np.mean(time), "time_std": np.std(time)})
-        res_lst.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time), "num_init_lst": num_init_lst, "num_final_lst": num_final_lst, "init_layout_lst": init_layout_lst, "final_layout_lst": final_layout_lst, "instances": instances, "hc_params": hc_params})
+        res_lst.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time), "num_init_lst": num_init_lst, "num_final_lst": num_final_lst, "init_layout_lst": init_layout_lst, "final_layout_lst": final_layout_lst, "instances": instances, "hc_params": hc_params, "circuits": circuits})
         with Path(path).open("wb") as f:
             pickle.dump(res_lst, f)
 
     return res_lst
+
+def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
+    """Based on a run of collect_data_space time with different circuit types and constant t, and constant factories.
+
+    Plots the Improvement from hill climbing based on different circuit types.
+    ONLY CNOTs without T gates.
+    """
+    instances = res_lst[0]["instances"] #index does not matter because accidentally stored redundantely.
+    hc_params = res_lst[0]["hc_params"]
+
+    #cut off instances at length of res_lst
+    instances = instances[:len(res_lst)] #just in case there where more instacnes included but the run stopped earlier
+
+    ratio = 1.0
+    tgate = False
+
+    #filter instances with desired values for 
+    idx_include = []
+    for i, instance in enumerate(instances):
+        if instance["ratio"] == ratio and instance["tgate"] == tgate:
+            idx_include.append(i)
+    
+    #filter what range of t and ratio we get
+    dct_mat = [] #gather for each included idx the value for t, ratio and improvement
+    for i, instance in enumerate(instances):
+        if i in idx_include:
+            res = res_lst[i]
+            num_init_lst = res["num_init_lst"]
+            num_final_lst = res["num_final_lst"]    
+            improvements = []
+            for ni, nf in zip(num_init_lst, num_final_lst):
+                improvements.append((ni-nf)/ni)
+            mean_improvement = np.mean(improvements)
+            std_imrovement = np.std(improvements)
+            dct_mat.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"], "q": instance["q"], "circuit_type": instance["circuit_type"], "layout_name": instance["layout_name"]})
+    for el in dct_mat:
+        print(el)
+    #reshape such that one gets lists with fixed layout_name and fixed q
+    unique_q = {entry["q"] for entry in dct_mat}
+    unique_circuit_types = {entry["circuit_type"] for entry in dct_mat}
+    unique_layout_names = {entry["layout_name"] for entry in dct_mat}
+
+    #define order of circuit_types
+    circuit_types_ordered = ["sequential", "random", "parallelmax"]
+    sorted_circuit_types = [el for el in circuit_types_ordered if el in unique_circuit_types]
+    dct_plot = {}
+
+    for layout_name, q in itertools.product(unique_layout_names, unique_q):
+        key = (layout_name, q)
+        lst_improvement = []
+        lst_std = []
+        for ckt_i in range(len(sorted_circuit_types)):
+            for el in dct_mat:
+                if el["q"] == q and el["layout_name"] == layout_name and el["circuit_type"] == sorted_circuit_types[ckt_i]:
+                    lst_improvement.append(el["mean_improvement"])
+                    lst_std.append(el["std_improvement"])
+        dct_plot.update({key: [lst_improvement, lst_std]})   
+
+    for el,val in dct_plot.items():
+        print(el, val)                        
+
+    colors = plt.cm.rainbow(np.linspace(0, 1, 7))
+    # Define marker and color for each layout type
+    layout_styles = {
+        "hex24": {"color": colors[0], "marker": "o", "linestyle": "--", "label": "hex, q=24"},
+        "hex42": {"color": colors[0], "marker": "x", "linestyle": "--", "label": "hex, q=42"},
+        "hex60": {"color": colors[0], "marker": "v", "linestyle": "--", "label": "hex, q=60"},
+
+        "row24": {"color": colors[1], "marker": "o", "linestyle": "--", "label": "row, q=24"},
+        "row42": {"color": colors[1], "marker": "x", "linestyle": "--", "label": "row, q=42"},
+        "row60": {"color": colors[1], "marker": "v", "linestyle": "--", "label": "row, q=60"},
+
+        "pair24": {"color": colors[2], "marker": "o", "linestyle": "--", "label": "pair, q=24"},
+        "pair42": {"color": colors[2], "marker": "x", "linestyle": "--", "label": "pair, q=42"},
+        "pair60": {"color": colors[2], "marker": "v", "linestyle": "--", "label": "pair, q=60"}
+    }
+
+
+    #plot
+    _, ax = plt.subplots(figsize=size)
+    legend_handles = {}
+    for key, val in dct_plot.items():
+        label = key[0]+str(key[1])
+        lst_improvement = val[0]
+        lst_std = val[1]
+        style = layout_styles[label]
+        print(label)
+        print(lst_improvement)
+        ax.errorbar(range(len(sorted_circuit_types)), lst_improvement, yerr=lst_std, color=style["color"], fmt=style["marker"], linestyle=style["linestyle"])
+        # Add label only once per layout type
+        legend_handles[label] = Line2D(
+            [0], [0], color=style["color"], marker=style["marker"], linestyle="None", label=style["label"]
+        )
+
+    # Add unique legend entries
+    legend = ax.legend(
+        handles=list(legend_handles.values()), 
+        loc="upper center", 
+        bbox_to_anchor=(0.5, 1.4),  # Moves the legend above the plot, adapt this for other plots
+        fontsize=10, 
+        ncol=3,  # Adjust the number of columns as needed
+        fancybox = False
+    )
+    legend.get_frame().set_linewidth(0.8)
+    legend.get_frame().set_edgecolor("black")
+
+    ax.set_xticks(range(len(sorted_circuit_types)))
+    ax.set_xticklabels(sorted_circuit_types, rotation=45) 
+
+    ax.set_ylabel("Mean improvement $(n_i-n_f)/n_i$")
+    ax.set_xlabel("Random Circuit type")
+
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7) 
+    plt.tight_layout()
+
+    # Create the filename based on hyperparameters
+    metric = hc_params["metric"]
+    max_restarts = hc_params["max_restarts"]
+    max_iterations = hc_params["max_iterations"]
+    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}.pdf"
+
+    plt.savefig(file_path)
+    plt.show()
 
 def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_depth:int, path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
     """Plots a Matrix Plot with variation in number of factories and t. Also plots std.
@@ -226,12 +390,15 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     #---------plot improvements-------------
     plt.figure(figsize=size)
-    im = plt.imshow(data, cmap="rainbow", aspect="auto")
+    im = plt.imshow(data, cmap="viridis", aspect="auto")
 
     #add text std for each tile
     for i in range(data_std.shape[0]):  # Iterate rows
         for j in range(data_std.shape[1]):  # Iterate columns
-            plt.text(j, i, str(round(data_std[i, j],5)), ha="center", va="center", color="black", fontsize=8)
+            plt.text(j, i+0.2, "std="+str(round(data_std[i, j],3)), ha="center", va="center", color="white", fontsize=8, path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+    for i in range(data.shape[0]):  # Iterate rows
+        for j in range(data.shape[1]):  # Iterate columns
+            plt.text(j, i, str(round(data[i, j],3)), ha="center", va="center", color="white", fontsize=8, path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
 
     plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
     plt.yticks(ticks=list(available_f_dct.values()), labels=list(available_f_dct.keys()))
@@ -251,16 +418,46 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     plt.savefig(file_path)
 
     plt.show()
-    plt.cla()
+    plt.clf()
 
-    #---------plot improvements-------------
+    #--------plot improvements in 3d---------------
+    X, Y = np.meshgrid(list(available_t_dct.values()), list(available_f_dct.values()))
+
+    fig = plt.figure(figsize=size)
+    ax = fig.add_subplot(111, projection="3d")
+
+    surf = ax.plot_surface(X, Y, data, cmap="viridis", edgecolor="k", linewidth=0.5, alpha=0.9)
+
+    plt.gca().invert_yaxis() 
+    plt.gca().invert_xaxis()
+    #cbar = fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10)
+    #cbar.set_label("Mean Layer Reduction $(n_i - n_f) / n_i$")  
+
+    ax.set_xlabel("Reset time $t$")
+    ax.set_ylabel("Number of factories")
+    ax.set_zlabel("Mean Layer Reduction $(n_i - n_f) / n_i$")
+
+    ax.legend()
+    plt.show()
+
+    file_path = Path(path) / f"f_vs_t_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    plt.savefig(file_path)
+
+    plt.clf()
+
+    #---------plot abs layers-------------
     plt.figure(figsize=size)
-    im = plt.imshow(data_abs, cmap="rainbow", aspect="auto")
+    #need to adapt colorbar
+    im = plt.imshow(data_abs, cmap="viridis", aspect="auto")
 
     #add text std for each tile
     for i in range(data_abs_std.shape[0]):  # Iterate rows
         for j in range(data_abs_std.shape[1]):  # Iterate columns
-            plt.text(j, i, str(round(data_std[i, j],5)), ha="center", va="center", color="black", fontsize=8)
+            plt.text(j, i, str(round(data_abs[i, j],3)), ha="center", va="center", color="white", fontsize=8, path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+    for i in range(data_abs.shape[0]):  # Iterate rows
+        for j in range(data_abs.shape[1]):  # Iterate columns
+            plt.text(j, i+0.2, "std="+str(round(data_abs_std[i, j],3)), ha="center", va="center", color="white", fontsize=8, path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+
 
     plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
     plt.yticks(ticks=list(available_f_dct.values()), labels=list(available_f_dct.keys()))
@@ -280,6 +477,33 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     plt.savefig(file_path)
 
     plt.show()
+
+    plt.clf()
+
+    #------plot absolute layers in 3d---------
+
+    X, Y = np.meshgrid(list(available_t_dct.values()), list(available_f_dct.values()))
+
+    fig = plt.figure(figsize=size)
+    ax = fig.add_subplot(111, projection="3d")
+
+    surf = ax.plot_surface(X, Y, data_abs, cmap="viridis", edgecolor="k", linewidth=0.5, alpha=0.9)
+
+    plt.gca().invert_yaxis() 
+    plt.gca().invert_xaxis()
+    #cbar = fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10)
+    #cbar.set_label("Number of Layers")  
+
+    ax.set_xlabel("Reset time $t$")
+    ax.set_ylabel("Number of factories")
+    ax.set_zlabel("Number of Layers")
+
+    ax.legend()
+    plt.show()
+
+    file_path = Path(path) / f"f_vs_t_abslayers_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    plt.savefig(file_path)
+
     
 
 def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:str, min_depth:int, path: str = "./results", size:tuple[int,int] = (5,4)) -> None:
@@ -351,12 +575,12 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
 
     #-------------plot improvements------------------
     plt.figure(figsize=size)
-    im = plt.imshow(data, cmap="rainbow", aspect="auto")
+    im = plt.imshow(data, cmap="viridis", aspect="auto")
 
     #add text std for each tile
     for i in range(data_std.shape[0]):  # Iterate rows
         for j in range(data_std.shape[1]):  # Iterate columns
-            plt.text(j, i, str(round(data_std[i, j],5)), ha='center', va='center', color='black', fontsize=8)
+            plt.text(j, i, str(round(data_std[i, j],5)), ha="center", va="center", color="white", fontsize=8, path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
 
     plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
     plt.yticks(ticks=list(available_ratio_dct.values()), labels=list(available_ratio_dct.keys()))
@@ -377,19 +601,20 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
 
     plt.show()
 
-    plt.cla()
+    plt.close()
 
     #----------plot absolute layers-----------
     plt.figure(figsize=size)
-    im = plt.imshow(data_abs, cmap="rainbow", aspect="auto")
+    im = plt.imshow(data_abs, cmap="viridis", aspect="auto")
 
     #add text std for each tile
     for i in range(data_abs_std.shape[0]):  # Iterate rows
         for j in range(data_std.shape[1]):  # Iterate columns
-            plt.text(j, i, str(round(data_std[i, j],5)), ha='center', va='center', color='black', fontsize=8)
+            plt.text(j, i, str(round(data_std[i, j],5)), ha="center", va="center", color="white", fontsize=8, path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
 
     plt.xticks(ticks=list(available_t_dct.values()), labels=list(available_t_dct.keys()), rotation=45)
     plt.yticks(ticks=list(available_ratio_dct.values()), labels=list(available_ratio_dct.keys()))
+
 
     # Add colorbar
     cbar = plt.colorbar(im)
