@@ -133,22 +133,21 @@ def generate_random_circuit(q: int, min_depth: int, tgate: bool = False, ratio: 
         cnot_pairs.append((a, b))
         used_qubits.update([a,b])
 
-    while len(t_gates) <= num_t_gates:
-        a = random.randrange(q)
-        t_gates.append(a)
-        used_qubits.add(a)
+    if tgate is True:
+        while len(t_gates) <= num_t_gates:
+            a = random.randrange(q)
+            t_gates.append(a)
+            used_qubits.add(a)
 
     #check whether qubit labels are unused and if yes, add gates in accordance to ratio
     missing_qubits = set(range(q)) - used_qubits
     extra_cnot_count = num_cnot_gates
     extra_t_count = num_t_gates
 
-
-
     for i in missing_qubits:
         # Compute current ratio dynamically
         total_gates = extra_cnot_count + extra_t_count
-        expected_cnot_count = round(total_gates * ratio) if tgate else 0
+        expected_cnot_count = round(total_gates * ratio) if tgate else total_gates
         expected_t_count = total_gates - expected_cnot_count
 
         if extra_t_count < expected_t_count:
