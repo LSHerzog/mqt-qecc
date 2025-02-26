@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import itertools
+from collections import Counter
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -11,7 +14,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 from scipy.sparse import csr_matrix
 
-from qec.code_constructions import CSSCode
+from mqt.qecc.codes import CSSCode
 
 
 class SnakeBuilderSC:
@@ -1145,7 +1148,8 @@ class SnakeBuilderSTDW:
         zplaq, xplaq = self.find_stabilizers()
         hx = self.gen_check_matrix(xplaq)
         hz = self.gen_check_matrix(zplaq)
-        return CSSCode(hx, hz).z_logical_operator_basis
+
+        return CSSCode._compute_logical(np.array(hx),np.array(hz))
 
 
 class SnakeBuilder:

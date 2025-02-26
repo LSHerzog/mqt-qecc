@@ -1,10 +1,7 @@
 import stimcirq
 
-from circuit_coloring.noisy_circuits import memory_experiment
-from dem_to_matrices import detector_error_model_to_check_matrices
-from snake_builder import SnakeBuilderSTDW, SnakeBuilderSC
+from snake_builder import SnakeBuilderSTDW
 import networkx as nx
-from qec.code_constructions import CSSCode
 
 m=8
 n=12
@@ -40,7 +37,8 @@ if __name__ == '__main__':
     cirq_circuit = stimcirq.stim_circuit_to_cirq_circuit(ckt)
     print(cirq_circuit)
     print(repr(ckt))
-    print(ckt.diagram('timeline-svg'))
+    with open("ckt.svg", "w") as f:
+        f.write(str(ckt.diagram('timeline-svg')))
 
     # ckt2 = memory_experiment(2, CSSCode(snake.gen_check_matrix(x_plaquettes), snake.gen_check_matrix(z_plaquettes)))
     # print(ckt2.to_crumble_url())
