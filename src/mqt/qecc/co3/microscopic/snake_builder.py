@@ -8,9 +8,14 @@ from collections import Counter
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import stim
 from matplotlib import cm
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
+from scipy.sparse import csr_matrix
+
+#from qec.code_constructions import CSSCode
+import mqt
 
 
 class SnakeBuilderSC:
@@ -616,6 +621,479 @@ class SnakeBuilderSTDW:
             for el in translated_plaquette:
                 h[row, el] = 1
         return h
+    
+
+
+    def get_optimal_check_schedule(self, plaquettes: list):
+        """Plots the stabilizers, either z_plaquettes or x_plaquettes."""
+        pos = nx.get_node_attributes(self.g, "pos")
+        ancilla_qubits = []
+        data_qubits = set()
+        check_schedule = []  # store the vertex coords + the orientation label for the vertices of each face
+        if self.trans_dict is None:
+            self.integer_labeling()
+
+
+        for idx, face in enumerate(plaquettes):
+            # each face is a check and each check has a separate ancilla
+            ancilla_qubits.append(idx)
+            for q in face:
+                data_qubits.add(q)
+
+            # Get the positions for the vertices in the face
+
+            nr_nodes = len(face)
+            min_x = min([x for x, y in face])
+            min_y = min([y for x, y in face])
+
+            if nr_nodes == 2:
+                # todo check
+                check_schedule.append({
+                    "b": (min_x, min_y + 1),
+                    "c": (min_x, min_y)
+                })
+            elif nr_nodes == 4:
+                if (min_x, min_y + 2) in face:
+                    if (min_x+1,min_y+2) not in face:
+                        #   a
+                        #  /  \
+                        # f    \
+                        # \     \
+                        #  e --- d
+                        #
+                        check_schedule.append({
+                            "a": (min_x, min_y + 2),
+                            "d": (min_x + 1, min_y),
+                            "e": (min_x, min_y),
+                            "f": (min_x, min_y + 1)
+                        })
+                    else:
+                        #   a --- b
+                        #  /    /
+                        # f    /
+                        # \   /
+                        #  e
+                        check_schedule.append({
+                            "a": (min_x, min_y + 2),
+                            "b": (min_x + 1, min_y+2),
+                            "e": (min_x, min_y),
+                            "f": (min_x, min_y + 1)
+                        })
+                elif (min_x + 1, min_y + 2) in face:
+                    # has b but not a
+                    #        b
+                    #     /   \
+                    #    /     c
+                    #  /      /
+                    #  e --- d
+                    check_schedule.append({
+                        "b": (min_x + 1, min_y + 2),
+                        "c": (min_x + 1, min_y + 1),
+                        "d": (min_x + 1, min_y),
+                        "e": (min_x, min_y)
+                    })
+                elif self.positions[0][0][0] % 2 == 1:
+                    if min_y % 2 == 1:
+                        # if min y coord of triangle is odd and min y of face is odd we are on a bottom side
+                        #   a --- b
+                        #  /      \
+                        # f   ---  c
+                        check_schedule.append({
+                            "a": (min_x, min_y + 1),
+                            "b": (min_x + 1, min_y + 1),
+                            "c": (min_x + 1, min_y),
+                            "f": (min_x, min_y)
+                        })
+                    else:
+                        # f  ---   c
+                        # \       /
+                        #  e --- d
+                        check_schedule.append({
+                            "f": (min_x, min_y + 1),
+                            "c": (min_x + 1, min_y + 1),
+                            "d": (min_x + 1, min_y),
+                            "e": (min_x, min_y)
+                        })
+            elif nr_nodes == 6:
+                #   a --- b
+                #  /      \
+                # f        c
+                # \       /
+                #  e --- d
+                check_schedule.append({
+                    "a": (min_x, min_y + 2),
+                    "b": (min_x + 1, min_y + 2),
+                    "c": (min_x + 1, min_y + 1),
+                    "d": (min_x + 1, min_y),
+                    "e": (min_x, min_y),
+                    "f": (min_x, min_y + 1)
+                })
+            elif nr_nodes == 3:
+                check_schedule.append({
+                    "c": (min_x+1, min_y+1),
+                    "d": (min_x+1, min_y),
+                    "e": (min_x, min_y),
+                })
+            elif nr_nodes == 5:
+                check_schedule.append({
+                    "a": (min_x, min_y + 2),
+                    "b": (min_x + 1, min_y + 2),
+                    "c": (min_x + 1, min_y + 1),
+                    "e": (min_x, min_y),
+                    "f": (min_x, min_y + 1)
+                })
+            else:
+                raise ValueError(f'unexpected number of nodes ({len(face)}) in face: {face}')
+        assert (len(check_schedule) == len(plaquettes))
+        return check_schedule, data_qubits
+
+    def _syndrome_extraction_ckt(self,
+                                 before_round_data_depolarization,
+                                 after_clifford_depolarization,
+                                 before_measure_flip_probability,
+                                 after_reset_flip_probability,
+                                 with_detectors=True,
+                                 ):
+        plaquettes = self.find_stabilizers()[0]  # Z checks only for now
+        z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule(plaquettes)
+        nr_data_qubits = len(data_qubit_positions)
+        data_register_indices = np.arange(nr_data_qubits)
+        anc_register_indices = np.arange(nr_data_qubits, nr_data_qubits + len(z_check_schedule))
+        pos_to_qubit = {}
+
+        for idx, qb in enumerate(data_qubit_positions):
+            pos_to_qubit[qb] = idx
+
+        ### init block ###
+        circuit = stim.Circuit()
+        # initial round of deploarizing noize on the data qubits ~ idling noise
+        circuit.append("DEPOLARIZE1", data_register_indices, before_round_data_depolarization)
+        circuit.append("TICK")
+
+        # initialize Z check ancillas
+        circuit.append("RZ", anc_register_indices)
+        circuit.append("X_ERROR", anc_register_indices, after_reset_flip_probability)
+        circuit.append("TICK")
+
+        schedule = ["f", "a", "b", "e", "d", "c"]  # fig 6 in https://quantum-journal.org/papers/q-2025-01-27-1609/pdf/
+
+        # iterate over steps in schedule and append all CX gates happening in this step
+        # append 2 qubit dep noise after gate
+        for round in schedule:
+            for face_idx, face_sched in enumerate(z_check_schedule):
+                if round in face_sched:
+                    # if there is a CX scheduled in timestep 'round' of the face, apply gate
+                    qubit = pos_to_qubit[face_sched[round]]
+                    circuit.append("CX", [qubit, anc_register_indices[face_idx]])
+                    circuit.append(
+                        "DEPOLARIZE2",
+                        [qubit, anc_register_indices[face_idx]],
+                        after_clifford_depolarization,
+                    )
+                    circuit.append("TICK")
+
+        # measure all ancillas
+        circuit.append("MRZ", anc_register_indices, before_measure_flip_probability)
+
+        # add detectors for the measurements
+        if with_detectors:
+            dec_range = range(len(anc_register_indices))
+            for idx in dec_range:
+                circuit.append(f"DETECTOR", [stim.target_rec(-(len(anc_register_indices)) + idx)],
+                               (idx + len(data_register_indices), 0))
+        return circuit, data_register_indices,anc_register_indices,plaquettes
+
+
+    def snake_memory_ckt(self,rounds,
+                                        before_round_data_depolarization: float = 0.0,
+                                        after_clifford_depolarization: float = 0.0,
+                                        before_measure_flip_probability: float = 0.0,
+                                        after_reset_flip_probability: float = 0.0) -> stim.Circuit:
+        circuit = stim.Circuit()
+        circuit.append(f"RZ",)
+        circuit.append("TICK", [])
+        se_ckt,data_reg_idxs, anc_reg_idxs,plaquettes = self._syndrome_extraction_ckt(with_detectors=True,
+                                               before_round_data_depolarization=before_round_data_depolarization,
+                                               after_clifford_depolarization=after_clifford_depolarization,
+                                               before_measure_flip_probability=before_measure_flip_probability,
+                                               after_reset_flip_probability=after_reset_flip_probability)
+        se_ckt *= rounds
+        circuit += se_ckt
+
+        #### begin final readout block ####
+        circuit.append(f"MZ", data_reg_idxs, before_measure_flip_probability)
+
+        # add detectors for last round of data qubit measurements
+        for idx, k in enumerate(anc_reg_idxs):
+            pcm = self.gen_check_matrix(plaquettes)
+            pcm = csr_matrix(pcm)
+
+            bits = pcm[idx].indices
+
+            record_targets = [stim.target_rec(-len(anc_reg_idxs) - len(data_reg_idxs) + k)]
+            for bit in bits:
+                record_targets.append(stim.target_rec(-len(data_reg_idxs) + bit))
+
+            circuit.append("DETECTOR", record_targets, (k, 1))
+
+        # iterate rows of logicals, add logical observables corresponding to qubits in their support
+        logicals = self.get_logical_operator_basis()
+        logicals = csr_matrix(logicals)
+        for idx, logical in enumerate(logicals):
+            circuit.append(
+                "OBSERVABLE_INCLUDE",
+                [stim.target_rec(-len(anc_reg_idxs) + k) for k in logical.indices],
+                idx,
+            )
+        return circuit
+
+
+    def get_logical_operator_basis(self):
+        zplaq, xplaq = self.find_stabilizers()
+        hx = self.gen_check_matrix(xplaq)
+        hz = self.gen_check_matrix(zplaq)
+        #code = CSSCode(hx,hz)
+        code = mqt.qecc.CSSCode(self.d, Hx = hx, Hz = hz)
+        return code.Lz
+    
+
+
+    #------------methods for ZLZL stabilizer subset---------------
+    def find_outer_bdry(self) -> list[tuple]:
+        """Finds the set of outer boundaries of the triangles (not connected to stdw) for the inner triangles (start and end triangle not included)."""
+        assert self.d > 3, "This construction only works for d>=5."
+        triangles_to_check = list(range(1, len(self.positions)-1))
+        outer_nodes_total = []
+        for triangle in triangles_to_check:
+            prior_triangle = triangle -  1
+            next_triangle = triangle + 1
+            [lst_corner, lst_boundary] = self.find_triangle_edges_corners(triangle)
+            all_boundary = lst_corner + lst_boundary
+            prior_ancilla_pairs = self.find_interface_ancillas(prior_triangle, triangle)
+            next_ancilla_pairs = self.find_interface_ancillas(triangle, next_triangle)
+            #flatten to nodes
+            nodes_stdw = [node for plaq in prior_ancilla_pairs for node in plaq] + [node for plaq in next_ancilla_pairs for node in plaq] #all nodes within the adjacent stdw
+            #find those nodes in the triangle boundary which are next to stdw and complement
+            inner_nodes = []
+            for node in nodes_stdw:
+                neighbors = list(self.g.neighbors(node))
+                boundary_neighbors = [n for n in neighbors if n in all_boundary]
+                inner_nodes += boundary_neighbors
+            inner_nodes = list(set(inner_nodes)) #remove duplicates
+            outer_nodes = [n for n in all_boundary if n not in inner_nodes]
+            #outer_nodes does not include the corners yet, since they may be neighbor to stdw ancilla
+            #find the two elements of lst_corner which are closest to the elements in outer_nodes
+            closest_corners = []
+            for node in outer_nodes:
+                shortest_paths = nx.single_source_shortest_path_length(self.g, node, cutoff=3) #this would not work for d=3
+                closest_corners.extend(corner for corner in lst_corner if corner in shortest_paths)
+            outer_nodes += list(set(closest_corners))
+            outer_nodes = list(set(outer_nodes)) #remove duplicates
+            assert len(outer_nodes) == self.d, "The number of nodes on the outer bundary must be the same as the distance."
+            outer_nodes_total.append(outer_nodes)
+        self.outer_nodes_total = outer_nodes_total
+        return outer_nodes_total
+    
+
+    def fill_triangle(self, triangle_idx: int) -> list[list[tuple]]:
+        """Selects the subset of z stabilizers within the triangle (possibly also including stdw nodes) s.t. each node is maximally touched twice by a plaquette."""
+        assert triangle_idx != 0 and triangle_idx != len(self.positions)-1, "filling of triangles only possible if not at the ends of the snake"
+        z_plaquettes, _ = self.find_stabilizers()
+        subset_stabs = []
+        
+        positions_triangle = self.positions[triangle_idx]
+        prior_ancilla_pairs = self.find_interface_ancillas(triangle_idx - 1, triangle_idx)
+        next_ancilla_pairs = self.find_interface_ancillas(triangle_idx, triangle_idx + 1)
+        nodes_stdw = [node for plaq in prior_ancilla_pairs for node in plaq] + [node for plaq in next_ancilla_pairs for node in plaq]
+        relevant_positions = positions_triangle + nodes_stdw
+        filtered_z_plaquettes = [
+            plaquette for plaquette in z_plaquettes
+            if any(node in relevant_positions for node in plaquette)
+        ]
+        
+        [lst_corner, lst_boundary] = self.find_triangle_edges_corners(triangle_idx + 1)
+        filtered_z_plaquettes += lst_corner + lst_boundary
+        [lst_corner, lst_boundary] = self.find_triangle_edges_corners(triangle_idx - 1)
+        filtered_z_plaquettes += lst_corner + lst_boundary
+        
+        triangle_idx -= 1
+        for tup in itertools.combinations(self.outer_nodes_total[triangle_idx], 2):
+            for plaquette in filtered_z_plaquettes:
+                if tup[0] in plaquette and tup[1] in plaquette:
+                    subset_stabs.append(plaquette)
+                    continue
+        
+        flag_filler = True
+        while flag_filler:
+            temp_plaquettes = []
+            single_nodes = self.get_single_nodes(subset_stabs)
+            
+            assert all(value % 2 == 0 for value in Counter(single_nodes).values() if value != 1), "Something went wrong, there are 3,5,... plaquettes touching a node in the chosen stab subset."
+            
+            for plaq in subset_stabs:
+                single_nodes_in_plaq = [node for node in plaq if node in single_nodes]
+                if not single_nodes_in_plaq:
+                    continue
+                
+                all_neighboring_pairs = self.get_neighboring_pairs(single_nodes_in_plaq)
+                all_neighboring_pairs_disjoint = self.filter_disjoint_pairs(all_neighboring_pairs)
+                
+                for pair in all_neighboring_pairs_disjoint:
+                    matching_plaq = self.find_matching_plaquette(pair, filtered_z_plaquettes, subset_stabs)
+                    
+                    if matching_plaq is not None and len(matching_plaq) != 2:
+                        temp_plaquettes.append(matching_plaq)
+                        single_nodes = self.get_single_nodes(subset_stabs + temp_plaquettes)
+            
+            subset_stabs += temp_plaquettes
+            if not temp_plaquettes:
+                flag_filler = False
+        
+        triangle_idx += 1
+        subset_stabs_temp = []
+        for plaq in subset_stabs:
+            overlap_left = sum(1 for node in plaq if node in self.positions[triangle_idx-1])
+            overlap_right = sum(1 for node in plaq if node in self.positions[triangle_idx+1])
+            if overlap_left > 2 or overlap_right > 2:
+                continue
+            subset_stabs_temp.append(plaq)
+        
+        return subset_stabs_temp
+    
+    # helper functions for fill_triangle
+    @staticmethod
+    def get_single_nodes(subset_stabs: list[list[tuple]]) -> list[tuple]:
+        """Flatten a list of stabilizers."""
+        flattened_nodes = [item for sublist in subset_stabs for item in sublist]
+        counts = Counter(flattened_nodes)
+        return [key for key, value in counts.items() if value == 1]
+    
+    def get_neighboring_pairs(self, single_nodes_in_plaq: list[tuple]) -> list[list[tuple]]:
+        """Find pairs of single nodes which are neighbors on the graph."""
+        return [pair for pair in itertools.combinations(single_nodes_in_plaq, 2)
+                if pair in self.g.edges() and (pair[1], pair[0]) in self.g.edges()]
+    
+    @staticmethod
+    def filter_disjoint_pairs(all_neighboring_pairs: list[list[tuple]]) -> list[list[tuple]]:
+        """Find disjoint pairs of neighboring nodes on a plaquette."""
+        disjoint_pairs = []
+        for pair in all_neighboring_pairs:
+            other_nodes = [item for sublist in all_neighboring_pairs if sublist != pair for item in sublist]
+            if pair[0] not in other_nodes or pair[1] not in other_nodes:
+                disjoint_pairs.append(pair)
+        return disjoint_pairs
+    
+    @staticmethod
+    def find_matching_plaquette(pair: tuple, filtered_z_plaquettes: list[list[tuple]], subset_stabs: list[list[tuple]]) -> list[tuple] | None:
+        """Find plaquette which shares pair but is not in subset_stabs."""
+        for plaquette in [plaq for plaq in filtered_z_plaquettes if plaq not in subset_stabs]:
+            if all(node in plaquette for node in pair):
+                return plaquette
+        return None
+
+    def find_stabilizers_zz(self) -> list[list[tuple]]:
+        """Summarizes the methods above and joins the subsets per triangle on the STDW."""
+        n = len(self.positions)
+        subset_z_stabs = []
+        self.find_outer_bdry()
+        for triangle_idx in range(1, n-1):
+            subset_stabs = self.fill_triangle(triangle_idx)
+            subset_z_stabs += subset_stabs
+        subset_z_stabs = list(map(set, {frozenset(s) for s in subset_z_stabs}))
+        
+        #adapt the gaps connecting the snake with the logical patches
+        #throw away plaquettes if they go into the logical patch (beyond the boundary nodes), i.e. if a plaquette overlaps with more than 2 nodes in the logical patch
+        left_logical = self.positions[0]
+        right_logical = self.positions[n-1]
+        subset_z_stabs_temp = []
+        for plaq in subset_z_stabs:
+            overlap_left_logical = 0
+            overlap_right_logical = 0
+            for node in plaq:
+                if node in left_logical:
+                    overlap_left_logical += 1
+                if node in right_logical:
+                    overlap_right_logical += 1
+            if overlap_left_logical > 2 or overlap_right_logical >2:
+                #subset_z_stabs.remove(plaq)
+                pass
+            else:
+                subset_z_stabs_temp.append(plaq)
+        subset_z_stabs = subset_z_stabs_temp
+
+        #all stdw ancilla positions:
+        interface_ancillas = []
+        for i in range(n-1):
+            interface_ancillas += self.find_interface_ancillas(i, i+1)
+        interface_ancillas = [item for sublist in interface_ancillas for item in sublist]
+
+        #count which nodes have odd number of touches with a stabilizer, if yes add a weight-2
+        flattened_nodes = [item for sublist in subset_z_stabs for item in sublist]
+        counts = Counter(flattened_nodes)
+        for node, count in counts.items():
+            if count % 2 !=0 and node not in left_logical and node not in right_logical: #exclude the logical patches' boundaries, because they should of course not vanish as they constitute the ZL ZL
+                #check whether part of interface ancillas, b.c. we only can do corrections there
+                assert node in interface_ancillas, "There is a correction to be done which you cannot do with the current stabilizer construction..."
+                #find stdw ancilla neighbor
+                neighbors = self.g.neighbors(node)
+                pair = None
+                for neigh in neighbors:
+                    if neigh in interface_ancillas:
+                        pair = (node, neigh)
+                if pair is None:
+                    msg = "the zlzl operator cannot be constructed with the given stabilizers"
+                    raise RuntimeError(msg)
+                #add pair of nodes to subset_z_stabs
+                subset_z_stabs.append(pair)
+
+        #final removal of duplicates
+        return list(map(set, {frozenset(s) for s in subset_z_stabs}))
+
+
+    def test_zz_stabs(self, subset_z_stabs: list[list[tuple]]) -> bool: 
+        """Checks whether all nodes are touched by stabilizers even number of times besides the logical operators."""
+        #determine nodes on which the logical operators act.
+        n = len(self.positions)
+        [lst_corner, lst_boundary] = self.find_triangle_edges_corners(0)
+        ancilla_pairs = self.find_interface_ancillas(0, 1)
+        ancillas = [item for sublist in ancilla_pairs for item in sublist]
+        z_left_nodes = []
+        for anc in ancillas:
+            neighbors = self.g.neighbors(anc)
+            z_left_nodes.extend(neigh for neigh in neighbors if neigh in lst_corner+lst_boundary)
+
+        closest_corners = []
+        for node in z_left_nodes:
+            shortest_paths = nx.single_source_shortest_path_length(self.g, node, cutoff=3) #this would not work for d=3
+            closest_corners.extend(corner for corner in lst_corner if corner in shortest_paths)
+        z_left_nodes += closest_corners
+        z_left_nodes = list(set(z_left_nodes))
+
+        [lst_corner, lst_boundary] = self.find_triangle_edges_corners(n-1)
+        ancilla_pairs = self.find_interface_ancillas(n-2, n-1)
+        ancillas = [item for sublist in ancilla_pairs for item in sublist]
+        z_right_nodes = []
+        for anc in ancillas:
+            neighbors = self.g.neighbors(anc)
+            z_right_nodes.extend(neigh for neigh in neighbors if neigh in lst_corner+lst_boundary)
+
+        closest_corners = []
+        for node in z_right_nodes:
+            shortest_paths = nx.single_source_shortest_path_length(self.g, node, cutoff=3) #this would not work for d=3
+            for corner in lst_corner:
+                if corner in shortest_paths:
+                    closest_corners.append(corner)
+        z_right_nodes += closest_corners
+        z_right_nodes = list(set(z_right_nodes))
+
+        flattened_nodes = [item for sublist in subset_z_stabs for item in sublist]
+        counts = Counter(flattened_nodes)
+        for node, count in counts.items():
+            if count % 2 != 0 and node not in z_left_nodes and node not in z_right_nodes:
+                return False
+        return True
+    
+
 
 
 class SnakeBuilder:
