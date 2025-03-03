@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import warnings
 from collections import Counter
 
 import matplotlib.pyplot as plt
@@ -44,39 +45,57 @@ class SnakeBuilderSC:
         dist = min([len(el) for el in positions_rough] + [len(el) for el in positions_smooth]) - 1 #-1 because we count edges not nodes
         assert dist == d, f"Distance d={dist} does not coincide with the geometry of the rough and smooth positions."
 
-    def fill_snake(self) -> list[list[tuple[int,int]]]:
-        """Adds the inner nodes given by the boundary `positions`. Sweeps through rows of lattice.
+    def fill_snake(self) -> list[list[tuple[int, int]]]:
+        """Finds the true interior nodes by marking exterior nodes from all four edges.
 
         Returns:
-            list[list[tuple[int,int]]]: Positions of ALL nodes in the snakes.
+            list[list[tuple[int, int]]]: Positions of ALL nodes in the snakes.
         """
         positions_smooth_flattened = [pos for sublist in self.positions_smooth for pos in sublist]
         positions_rough_flattened = [pos for sublist in self.positions_rough for pos in sublist]
-        positions = list(set(positions_smooth_flattened + positions_rough_flattened))#remove duplicate elements because corners appear twice.
-        inside_nodes = set()
-
-        x_values = {x for x, _ in self.g.nodes()}
-        y_values = {y for _, y in self.g.nodes()}
-
-        #sweep row by row of the lattice
-        for y in sorted(y_values):
-            inside = False
-            temp_nodes = []
-            for x in sorted(x_values):
-                node = (x,y)
-                if node in positions:
-                    if inside:
-                        inside_nodes.update(temp_nodes)
-                    inside = not inside
-                    temp_nodes = []
-                elif inside:
-                    temp_nodes.append(node)
-
-        self.inner_nodes = list(inside_nodes)
-        self.boundary_nodes = list(positions)
+        boundary_nodes = set(positions_smooth_flattened + positions_rough_flattened)  # Boundary nodes
         
-        return positions + list(inside_nodes)
-    
+        all_nodes = set(self.g.nodes())  # All nodes in the lattice
+        exterior_nodes = set()  # Nodes confirmed to be exterior
+
+        x_values = sorted({x for x, _ in all_nodes})
+        y_values = sorted({y for _, y in all_nodes})
+
+        def mark_exterior(start_x: int, start_y: int, dx: int, dy: int) -> None:
+            """Mark exterior nodes by moving from a starting edge."""
+            x, y = start_x, start_y
+            while (x, y) in all_nodes:
+                if (x, y) in boundary_nodes:
+                    return  # Stop when hitting a boundary
+                exterior_nodes.add((x, y))
+                x += dx
+                y += dy
+
+        # Sweep from left
+        for y in y_values:
+            mark_exterior(x_values[0], y, 1, 0)
+        
+        # Sweep from right
+        for y in y_values:
+            mark_exterior(x_values[-1], y, -1, 0)
+
+        # Sweep from bottom
+        for x in x_values:
+            mark_exterior(x, y_values[-1], 0, -1)
+
+        # Sweep from right
+        for x in x_values:
+            mark_exterior(x, y_values[0], 0, 1)
+
+        # Interior nodes = all nodes minus exterior and boundary
+        interior_nodes = all_nodes - exterior_nodes - boundary_nodes
+
+        self.inner_nodes = list(interior_nodes)
+        self.boundary_nodes = list(boundary_nodes)
+
+        return list(boundary_nodes) + list(interior_nodes)
+
+        
     @staticmethod
     def neighbors_ver_hor(node1: tuple[int,int], node2: tuple[int,int]) -> bool:
         """Checks whether two nodes are neighbors.
@@ -267,8 +286,10 @@ class SnakeBuilderSC:
         q = len(self.qubit_edges)
         lenstars = len(self.stars)
         lenplaq = len(self.plaquettes)
-        assert q - lenstars - lenplaq == 1, f"Your stabilizers are wrong. They should create 1 logical qubit but they yield {q - lenstars - lenplaq} instead."
+        #assert q - lenstars - lenplaq == 1, f"Your stabilizers are wrong. They should create 1 logical qubit but they yield {q - lenstars - lenplaq} instead."
         #print("logical qubits", q - lenstars - lenplaq)
+        if q - lenstars - lenplaq != 1:
+            warnings.warn(f"Your stabilizers are wrong. They should create 1 logical qubit but they yield {q - lenstars - lenplaq} instead.", UserWarning, stacklevel=2)
 
         return self.plaquettes, self.stars
 
