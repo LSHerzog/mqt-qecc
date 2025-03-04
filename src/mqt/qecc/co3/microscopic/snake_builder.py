@@ -319,9 +319,11 @@ class SnakeBuilderSC:
         
         opz and opx are the logical operators retrieved via mqt.qecc.CSSCode which are already translated as edges on the graph.
         """
-        pos = {node: (node[0], -node[1]) for node in self.g.nodes()}  # Adjust for proper display
+        #pos = {node: (node[0], -node[1]) for node in self.g.nodes()}  # Adjust for proper display
+        pos = {(x, y): (x, y) for x, y in self.g.nodes()}  # Keep y as positive
 
-        midpoints = [((x1 + x2) / 2, -(y1 + y2) / 2) for (x1, y1), (x2, y2) in self.qubit_edges]
+
+        midpoints = [((x1 + x2) / 2, (y1 + y2) / 2) for (x1, y1), (x2, y2) in self.qubit_edges]
 
         plt.figure(figsize=(8,8))
         nx.draw(self.g, pos, with_labels=True, node_size=100, edge_color="lightgray", font_size = 8)
