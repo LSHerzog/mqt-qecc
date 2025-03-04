@@ -379,126 +379,114 @@ class SnakeBuilderSC:
         plt.legend(unique_handles, unique_legend.keys())
         plt.show()
 
-    def get_optimal_check_schedule(self, plaquettes: list):
+    def get_optimal_check_schedule(self):
         """Plots the stabilizers, either z_plaquettes or x_plaquettes."""
         pos = nx.get_node_attributes(self.g, "pos")
         ancilla_qubits = []
         data_qubits = set()
         check_schedule = []  # store the vertex coords + the orientation label for the vertices of each face
-        if self.trans_dict is None:
-            self.integer_labeling()
-
+        plaquettes, _ = self.create_stabs()
         for idx, face in enumerate(plaquettes):
             # each face is a check and each check has a separate ancilla
             ancilla_qubits.append(idx)
-            for q in face:
-                data_qubits.add(q)
+            # faces given as collection of edges
+            for edge in face:
+                data_qubits.add(edge)
 
             # Get the positions for the vertices in the face
 
-            nr_nodes = len(face)
-            min_x = min([x for x, y in face])
-            min_y = min([y for x, y in face])
+            nr_edges = len(face)
+            # assumes bottom left is (0,0)
+            min_x = min([x1 if x1<x2 else x2 for (x1,y1), (x2,y2) in face])
+            min_y = min([y1 if y1<y2 else y2 for (x1,y1), (x2,y2) in face])
 
-            if nr_nodes == 2:
-                # todo check
-                check_schedule.append({
-                    "b": (min_x, min_y + 1),
-                    "c": (min_x, min_y)
-                })
-            elif nr_nodes == 4:
-                if (min_x, min_y + 2) in face:
-                    if (min_x + 1, min_y + 2) not in face:
-                        #   a
-                        #  /  \
-                        # f    \
-                        # \     \
-                        #  e --- d
-                        #
-                        check_schedule.append({
-                            "a": (min_x, min_y + 2),
-                            "d": (min_x + 1, min_y),
-                            "e": (min_x, min_y),
-                            "f": (min_x, min_y + 1)
-                        })
-                    else:
-                        #   a --- b
-                        #  /    /
-                        # f    /
-                        # \   /
-                        #  e
-                        check_schedule.append({
-                            "a": (min_x, min_y + 2),
-                            "b": (min_x + 1, min_y + 2),
-                            "e": (min_x, min_y),
-                            "f": (min_x, min_y + 1)
-                        })
-                elif (min_x + 1, min_y + 2) in face:
-                    # has b but not a
-                    #        b
-                    #     /   \
-                    #    /     c
-                    #  /      /
-                    #  e --- d
+            if nr_edges == 2:
+                # left and top
+                if ((min_x,min_y), (min_x,min_y+1)) in face and ((min_x, min_y), (min_x+1, min_y)) in face:
+                    #     2
+                    #
+                    #     a
+                    #
+                    #     1   d   4
                     check_schedule.append({
-                        "b": (min_x + 1, min_y + 2),
-                        "c": (min_x + 1, min_y + 1),
-                        "d": (min_x + 1, min_y),
-                        "e": (min_x, min_y)
+                        "a": ((min_x,min_y), (min_x,min_y+1)) ,
+                        "d": ((min_x, min_y), (min_x+1, min_y))
                     })
-                elif self.positions[0][0][0] % 2 == 1:
-                    if min_y % 2 == 1:
-                        # if min y coord of triangle is odd and min y of face is odd we are on a bottom side
-                        #   a --- b
-                        #  /      \
-                        # f   ---  c
-                        check_schedule.append({
-                            "a": (min_x, min_y + 1),
-                            "b": (min_x + 1, min_y + 1),
-                            "c": (min_x + 1, min_y),
-                            "f": (min_x, min_y)
-                        })
-                    else:
-                        # f  ---   c
-                        # \       /
-                        #  e --- d
-                        check_schedule.append({
-                            "f": (min_x, min_y + 1),
-                            "c": (min_x + 1, min_y + 1),
-                            "d": (min_x + 1, min_y),
-                            "e": (min_x, min_y)
-                        })
-            elif nr_nodes == 6:
-                #   a --- b
-                #  /      \
-                # f        c
-                # \       /
-                #  e --- d
+                # top and right edge
+                elif ((min_x, min_y+1), (min_x+1, min_y+1)) in face and ((min_x+1, min_y-1),
+                                                                         (min_x+1, min_y)) in face:
+                    #     2   b   3
+                    #
+                    #             c
+                    #
+                    #             4
+                    check_schedule.append({
+                        "b": ((min_x, min_y+1), (min_x+1, min_y+1)),
+                        "c": ((min_x+1, min_y-1),(min_x+1, min_y))
+                    })
+                # left and top edge
+                elif ((min_x, min_y),(min_x,min_y+1)) in face and ((min_x+1,min_y), (min_x+1,min_y+1)) in face:
+                    #     2   b   3
+                    #
+                    #     a
+                    #
+                    #     1
+                    check_schedule.append({
+                        "b": ((min_x+1,min_y), (min_x+1,min_y+1)),
+                        "a": ((min_x, min_y),(min_x,min_y+1))
+                    })
+                else:
+                    raise ValueError(f'unknown size 2 plaquette {face}')
+            elif nr_edges == 3:
+                if not ((min_x, min_y), (min_x, min_y+1)) in face:
+                    #     2   b   3
+                    #
+                    #             c
+                    #
+                    #     1   d   4
+                    check_schedule.append({
+                        "b": ((min_x, min_y+1), (min_x + 1, min_y+1)),
+                        "c": ((min_x + 1, min_y+1), (min_x + 1, min_y)),
+                        "d": ((min_x, min_y), (min_x+1, min_y))
+                    })
+                elif not ((min_x+1, min_y+1),(min_x+1, min_y)) in face:
+                    #     2   b   3
+                    #
+                    #     a
+                    #
+                    #     1   d   4
+                    check_schedule.append({
+                        "b": ((min_x, min_y + 1), (min_x + 1, min_y + 1)),
+                        "a": ((min_x, min_y), (min_x, min_y+1)),
+                        "d": ((min_x, min_y), (min_x+1, min_y))
+                    })
+                elif not ((min_x,min_y), (min_x+1, min_y)) in face:
+                    #     2   b   3
+                    #
+                    #     a       c
+                    #
+                    #     1       4
+                    check_schedule.append({
+                        "b": ((min_x, min_y + 1), (min_x + 1, min_y + 1)),
+                        "a": ((min_x, min_y), (min_x, min_y + 1)),
+                        "c": ((min_x+1, min_y+1), (min_x + 1, min_y))
+                    })
+            elif nr_edges == 4:
+                # qubits on letters == edges (i,j) where i,j are numbers
+                #     2   b   3
+                #
+                #     a       c
+                #
+                #     1   d   4
                 check_schedule.append({
-                    "a": (min_x, min_y + 2),
-                    "b": (min_x + 1, min_y + 2),
-                    "c": (min_x + 1, min_y + 1),
-                    "d": (min_x + 1, min_y),
-                    "e": (min_x, min_y),
-                    "f": (min_x, min_y + 1)
-                })
-            elif nr_nodes == 3:
-                check_schedule.append({
-                    "c": (min_x + 1, min_y + 1),
-                    "d": (min_x + 1, min_y),
-                    "e": (min_x, min_y),
-                })
-            elif nr_nodes == 5:
-                check_schedule.append({
-                    "a": (min_x, min_y + 2),
-                    "b": (min_x + 1, min_y + 2),
-                    "c": (min_x + 1, min_y + 1),
-                    "e": (min_x, min_y),
-                    "f": (min_x, min_y + 1)
+                    "b": ((min_x, min_y+1),(min_x+1, min_y+1)),
+                    "a": ((min_x, min_y), (min_x, min_y+1)),
+                    "c": ((min_x+1, min_y), (min_x+1, min_y+1)),
+                    "d": ((min_x, min_y), (min_x+1, min_y))
                 })
             else:
                 raise ValueError(f'unexpected number of nodes ({len(face)}) in face: {face}')
-        assert (len(check_schedule) == len(plaquettes))
+        assert (len(check_schedule) == len(plaquettes) == len(ancilla_qubits))
         return check_schedule, data_qubits
 
     def _syndrome_extraction_ckt(self,
@@ -507,8 +495,7 @@ class SnakeBuilderSC:
                                  before_measure_flip_probability,
                                  after_reset_flip_probability,
                                  ):
-        plaquettes = self.find_stabilizers()[0]  # Z checks only for now
-        z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule(plaquettes)
+        z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule()
         nr_data_qubits = len(data_qubit_positions)
         data_register_indices = np.arange(nr_data_qubits)
         anc_register_indices = np.arange(nr_data_qubits, nr_data_qubits + len(z_check_schedule))
@@ -528,7 +515,7 @@ class SnakeBuilderSC:
         circuit.append("X_ERROR", anc_register_indices, after_reset_flip_probability)
         circuit.append("TICK")
 
-        schedule = ["f", "a", "b", "e", "d", "c"]  # fig 6 in https://quantum-journal.org/papers/q-2025-01-27-1609/pdf/
+        schedule = ["b","a","c","d"]
 
         # iterate over steps in schedule and append all CX gates happening in this step
         # append 2 qubit dep noise after gate
@@ -548,21 +535,21 @@ class SnakeBuilderSC:
         # measure all ancillas
         circuit.append("MRZ", anc_register_indices, before_measure_flip_probability)
 
-        return circuit, data_register_indices, anc_register_indices, plaquettes
+        return circuit, data_register_indices, anc_register_indices
 
     def snake_memory_ckt(self, rounds,
                          before_round_data_depolarization: float = 0.0,
                          after_clifford_depolarization: float = 0.0,
                          before_measure_flip_probability: float = 0.0,
                          after_reset_flip_probability: float = 0.0) -> stim.Circuit:
-        se_ckt, data_reg_idxs, anc_reg_idxs, plaquettes = self._syndrome_extraction_ckt(
+        se_ckt, data_reg_idxs, anc_reg_idxs = self._syndrome_extraction_ckt(
             before_round_data_depolarization=before_round_data_depolarization,
             after_clifford_depolarization=after_clifford_depolarization,
             before_measure_flip_probability=before_measure_flip_probability,
             after_reset_flip_probability=after_reset_flip_probability, )
-        hz = self.gen_check_matrix(plaquettes)
-        _,n = hz.shape
-        m = len(plaquettes)
+        _, hz,_ = self.gen_checks()
+        m,n = hz.shape
+
         circuit = stim.Circuit()
         ######### INIT BLOCK #########
         circuit.append(f"RZ", data_reg_idxs)
@@ -633,6 +620,10 @@ class SnakeBuilderSC:
             )
             #### END FINAL BLOCK ####
         return circuit
+
+    def get_logical_operator_basis(self):
+        hx, hz,_ = self.gen_checks()
+        return CSSCode._compute_logical(np.array(hx),np.array(hz))
 
 class SnakeBuilderSTDW:
     """Constructs a n-snake of distance d color codes with semi transparent domain wall."""

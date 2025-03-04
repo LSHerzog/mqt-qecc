@@ -1,6 +1,6 @@
 import stimcirq
 
-from snake_builder import SnakeBuilderSTDW
+from snake_builder import SnakeBuilderSTDW, SnakeBuilderSC
 import networkx as nx
 
 m=8
@@ -22,23 +22,23 @@ positions = [
 ]
 
 if __name__ == '__main__':
-    d=3
-    snake = SnakeBuilderSTDW(g, positions, d)
-
-    z_plaquettes, x_plaquettes = snake.find_stabilizers()
-
-    size = (7,4)
-    # snake.plot_stabilizers(x_plaquettes,size)
-    # snake.plot_stabilizers(z_plaquettes,size)
-
-    ckt = snake.snake_memory_ckt(rounds=2)
-    print(ckt.to_crumble_url())
-    print(ckt.to_quirk_url())
-    cirq_circuit = stimcirq.stim_circuit_to_cirq_circuit(ckt)
-    print(cirq_circuit)
-    print(repr(ckt))
-    with open("ckt.svg", "w") as f:
-        f.write(str(ckt.diagram('timeline-svg')))
+    # d=3
+    # snake = SnakeBuilderSTDW(g, positions, d)
+    #
+    # z_plaquettes, x_plaquettes = snake.find_stabilizers()
+    #
+    # size = (7,4)
+    # # snake.plot_stabilizers(x_plaquettes,size)
+    # # snake.plot_stabilizers(z_plaquettes,size)
+    #
+    # ckt = snake.snake_memory_ckt(rounds=2)
+    # print(ckt.to_crumble_url())
+    # print(ckt.to_quirk_url())
+    # cirq_circuit = stimcirq.stim_circuit_to_cirq_circuit(ckt)
+    # print(cirq_circuit)
+    # print(repr(ckt))
+    # with open("ckt.svg", "w") as f:
+    #     f.write(str(ckt.diagram('timeline-svg')))
 
     # ckt2 = memory_experiment(2, CSSCode(snake.gen_check_matrix(x_plaquettes), snake.gen_check_matrix(z_plaquettes)))
     # print(ckt2.to_crumble_url())
@@ -51,3 +51,27 @@ if __name__ == '__main__':
     #generate check matrix
     # hz = snake.gen_check_matrix(z_plaquettes)
     # hx = snake.gen_check_matrix(x_plaquettes)
+    d = 5
+    # you can also switch the roles between smooth and rough boundaries
+    positions_smooth = [
+        [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5)],
+        # [(1,1), (1,2), (1,3), (1,4), (1,5), (1,6)],
+        [(5, 5), (5, 6), (5, 7), (5, 8), (5, 9), (5, 10)]
+    ]
+    positions_rough = [
+        [(0, 5), (1, 6), (2, 7), (3, 8), (4, 9), (5, 10)],
+        # [(1,6), (2,7), (3,8), (4,9), (5,10)],
+        [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
+        # [(1,1), (2,2), (3,3), (4,4), (5,5)]
+    ]
+
+    snake = SnakeBuilderSC(g, positions_rough, positions_smooth, d)
+
+    ckt = snake.snake_memory_ckt(rounds=2)
+    print(ckt.to_crumble_url())
+    print(ckt.to_quirk_url())
+    cirq_circuit = stimcirq.stim_circuit_to_cirq_circuit(ckt)
+    print(cirq_circuit)
+    print(repr(ckt))
+    with open("ckt.svg", "w") as f:
+        f.write(str(ckt.diagram('timeline-svg')))
