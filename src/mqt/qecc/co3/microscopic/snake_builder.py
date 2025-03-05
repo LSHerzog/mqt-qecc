@@ -447,7 +447,7 @@ class SnakeBuilderSC:
                     #             4
                     check_schedule.append({
                         "b": b,
-                        "c": ((min_x + 1, min_y - 1), (min_x + 1, min_y))
+                        "c": frozenset((min_x + 1, min_y - 1), (min_x + 1, min_y))
                     })
                 # left and top edge
                 elif a in face and b in face:
@@ -459,6 +459,11 @@ class SnakeBuilderSC:
                     check_schedule.append({
                         "b": b,
                         "a": a
+                    })
+                elif c in face and d in face:
+                    check_schedule.append({
+                        "c": c,
+                        "d": d
                     })
                 else:
                     raise ValueError(f'unknown size 2 plaquette {face}')
