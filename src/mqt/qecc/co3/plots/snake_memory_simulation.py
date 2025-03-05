@@ -2,14 +2,14 @@ from pathlib import Path
 
 import networkx as nx
 from scipy.sparse import csr_matrix
-import sinter
+#import sinter
 import numpy as np
 
-from stimbposd import sinter_decoders
+#from stimbposd import sinter_decoders
 
 from mqt.qecc.co3.dem_to_matrices import detector_error_model_to_check_matrices
-from src.mqt.qecc import CSSCode
-from src.mqt.qecc.co3 import SnakeBuilderSC
+from mqt.qecc import CSSCode
+from mqt.qecc.co3 import SnakeBuilderSC
 
 
 def get_dist_three_varying_snakes(length):

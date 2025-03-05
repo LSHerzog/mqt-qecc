@@ -539,13 +539,30 @@ class SnakeBuilderSC:
                                  after_reset_flip_probability,
                                  ):
         z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule()
-        nr_data_qubits = len(data_qubit_positions)
+        
+        #replace this with the trans_dict also used for 
+        pos_to_qubit = {}
+        for key, val in self.trans_dict.items():
+            pos_to_qubit[frozenset(key)] = val
+
+        
+        nr_data_qubits = len(list(pos_to_qubit.keys()))
         data_register_indices = np.arange(nr_data_qubits)
         anc_register_indices = np.arange(nr_data_qubits, nr_data_qubits + len(z_check_schedule))
-        pos_to_qubit = {}
+        #print("nr_data_qubits", nr_data_qubits)
+        #print("data_register_indices", data_register_indices)
+        #print("anc_register_indices", anc_register_indices)
+        #print("z check schedule", len(z_check_schedule))
+        #pos_to_qubit = {}
 
-        for idx, edge in enumerate(data_qubit_positions):
-            pos_to_qubit[edge] = idx
+        #for idx, edge in enumerate(data_qubit_positions):
+        #    pos_to_qubit[edge] = idx
+
+        
+
+        #print("lucas labels")
+        #for item in pos_to_qubit.items():
+        #    print(item)
 
         ### init block ###
         circuit = stim.Circuit()
@@ -592,6 +609,9 @@ class SnakeBuilderSC:
             after_reset_flip_probability=after_reset_flip_probability, )
         _, hz, _ = self.gen_checks()
         m, n = hz.shape
+
+        #print("data_register_indices", data_reg_idxs)
+        #print("anc_register_indices", anc_reg_idxs)
 
         circuit = stim.Circuit()
         ######### INIT BLOCK #########
@@ -640,11 +660,18 @@ class SnakeBuilderSC:
         for idx, anc_idx in enumerate(anc_reg_idxs):
             pcm = csr_matrix(hz)
             bits = pcm[idx].indices
-
-            record_targets = [stim.target_rec(-m - n + anc_idx)]
+            #print("bits", bits)
+            #record_targets = [stim.target_rec(-m - n + anc_idx)]
+            record_targets = []
+            #print("-m-n+anc_idx", -m - n + anc_idx, "record targets", record_targets)
             for bit in bits:
+                #print("-n + bit",-n + bit)
                 record_targets.append(stim.target_rec(-n + bit))
 
+            #print("---")
+            #print("record targets", record_targets)
+            #print("(anc_idx, 1)", (anc_idx,1))
+            #print("---")
             circuit.append("DETECTOR", record_targets, (anc_idx, 1))
 
         # iterate rows of logicals, add observable include
