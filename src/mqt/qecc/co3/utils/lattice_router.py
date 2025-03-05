@@ -1033,7 +1033,7 @@ class ShortestFirstRouterTGatesDyn(ShortestFirstRouterTGates):
             #print("new layers_cnot_t", self.layers_cnot_t_orig)
             for i in range(len(self.layers_cnot_t_orig)):
                 self.order_terminal_pairs(i)
-                self.layers_cnot_t = self.layers_cnot_t_orig
+                self.layers_cnot_t = self.layers_cnot_t_orig # ! I am slowing down the algorihtm here by repeatedly ordering the adapted initia layers.
             #print("ordered", self.layers_cnot_t)
             layer = 0 #since we adapt the layers_cnot_t_orig inplace, always layer=0 needed
             vdp_dict, terminal_pairs_remainder = self.find_max_vdp_set(layer)

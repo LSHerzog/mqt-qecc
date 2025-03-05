@@ -228,13 +228,14 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
                 improvements.append((ni-nf)/ni)
             mean_improvement = np.mean(improvements)
             std_imrovement = np.std(improvements)
-            dct_mat.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"], "q": instance["q"], "circuit_type": instance["circuit_type"], "layout_name": instance["layout_name"]})
+            dct_mat.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"], "q": instance["q"], "circuit_type": instance["circuit_type"], "layout_name": instance["layout_name"], "min_depth":instance["min_depth"]})
     for el in dct_mat:
         print(el)
     #reshape such that one gets lists with fixed layout_name and fixed q
     unique_q = {entry["q"] for entry in dct_mat}
     unique_circuit_types = {entry["circuit_type"] for entry in dct_mat}
     unique_layout_names = {entry["layout_name"] for entry in dct_mat}
+    unique_min_depths = {entry["min_depth"] for entry in dct_mat}
 
     #define order of circuit_types
     circuit_types_ordered = ["sequential", "random", "parallelmax"]
@@ -243,11 +244,14 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
 
     for layout_name, q in itertools.product(unique_layout_names, unique_q):
         key = (layout_name, q)
+    #for layout_name, min_depth in itertools.product(unique_layout_names, unique_min_depths):
+        #key = (layout_name, min_depth)
         lst_improvement = []
         lst_std = []
         for ckt_i in range(len(sorted_circuit_types)):
             for el in dct_mat:
                 if el["q"] == q and el["layout_name"] == layout_name and el["circuit_type"] == sorted_circuit_types[ckt_i]:
+                #if el["min_depth"] == min_depth and el["layout_name"] == layout_name and el["circuit_type"] == sorted_circuit_types[ckt_i]:
                     lst_improvement.append(el["mean_improvement"])
                     lst_std.append(el["std_improvement"])
         dct_plot.update({key: [lst_improvement, lst_std]})   
@@ -257,6 +261,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
 
     colors = plt.cm.rainbow(np.linspace(0, 1, 7))
     # Define marker and color for each layout type
+    # !CHOOSE WHICH LAYOUT STYLE YOU WANT, is q varied or is the depth varied? 
     layout_styles = {
         "hex24": {"color": colors[0], "marker": "o", "linestyle": "--", "label": "hex, q=24"},
         "hex42": {"color": colors[0], "marker": "x", "linestyle": "--", "label": "hex, q=42"},
@@ -270,6 +275,17 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
         "pair42": {"color": colors[2], "marker": "x", "linestyle": "--", "label": "pair, q=42"},
         "pair60": {"color": colors[2], "marker": "v", "linestyle": "--", "label": "pair, q=60"}
     }
+    #layout_styles = {
+    #    "hex48": {"color": colors[0], "marker": "o", "linestyle": "--", "label": "hex, Num. gates = 48"},
+    #    "row48": {"color": colors[1], "marker": "o", "linestyle": "--", "label": "row, Num. gates = 48"},
+    #    "pair48": {"color": colors[2], "marker": "o", "linestyle": "--", "label": "pair, Num. gates = 48"},
+    #    "hex96": {"color": colors[0], "marker": "x", "linestyle": "--", "label": "hex, Num. gates = 96"},
+    #    "row96": {"color": colors[1], "marker": "x", "linestyle": "--", "label": "row, Num. gates = 96"},
+    #    "pair96": {"color": colors[2], "marker": "x", "linestyle": "--", "label": "pair, Num. gates = 96"},
+    #    "hex192": {"color": colors[0], "marker": "v", "linestyle": "--", "label": "hex, Num. gates = 192"},
+    #    "row192": {"color": colors[1], "marker": "v", "linestyle": "--", "label": "row, Num. gates = 192"},
+    #    "pair192": {"color": colors[2], "marker": "v", "linestyle": "--", "label": "pair, Num. gates = 192"},
+    #}
 
 
     #plot
@@ -313,7 +329,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     metric = hc_params["metric"]
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
-    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}.pdf"
+    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24.pdf"
 
     plt.savefig(file_path)
     plt.show()
