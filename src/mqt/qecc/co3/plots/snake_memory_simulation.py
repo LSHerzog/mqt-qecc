@@ -206,7 +206,7 @@ def get_snake_pcms_cc(d):
         raise Exception('unsupported snake dist')
 
 def get_dist_three_sc_snakes(nr_ancilla_patches):
-    m, n = 10, 10
+    m, n = 15, 15
     G = nx.grid_2d_graph(m, n)
 
     # Define the position with the origin at the lower left
@@ -288,89 +288,149 @@ def check_matchable(h):
             return
     print("Matchable.")
 
+def get_varying_distance_len_3_sc_snakes(d):
+    if d == 3:
+        m, n = 15, 15
+        G = nx.grid_2d_graph(m, n)
+        positions_smooth = [
+            [(0, 1), (1, 1), (2, 1), (3, 1)],
+            [(3, 11), (4, 11), (5, 11), (6, 11)]
+        ]
+        positions_rough = [
+            [(0, 1), (0, 2), (0, 3), (1, 4), (2, 5), (3, 6), (3, 7), (3, 8), (3, 9), (3, 10), (3, 11)],
+            [(3, 1), (3, 2), (3, 3), (4, 4), (5, 5), (6, 6), (6, 7), (6, 8), (6, 9), (6, 10), (6, 11)]
+        ]
+    elif d ==5:
+        m, n = 20, 20
+        G = nx.grid_2d_graph(m, n)
+
+        # Define the position with the origin at the lower left
+        pos = {(x, y): (x, y) for x, y in G.nodes()}  # Keep y as positive
+
+        # plt.figure(figsize=(12,12))
+        # nx.draw(G, pos, with_labels=True)
+        # %%
+        d = 5
+
+        positions_smooth = [
+            [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0)],
+            [(5, 18), (6, 18), (7, 18), (8, 18), (9, 18), (10, 18)]
+        ]
+        positions_rough = [
+            [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 5), (2, 6), (3, 7), (4, 8), (5, 9), (5, 10), (5, 11), (5, 12),
+             (5, 13), (5, 14), (5, 15), (5, 16), (5, 17), (5, 18)],
+            [(5, 0), (5, 1), (5, 2), (5, 3), (5, 4), (6, 5), (7, 6), (8, 7), (9, 8), (10, 9), (10, 10), (10, 11),
+             (10, 12), (10, 13), (10, 14), (10, 15), (10, 16), (10, 17), (10, 18)]
+        ]
+    else:
+        raise ValueError(f'unsupported distance {d}')
+    snake = SnakeBuilderSC(G, positions_rough, positions_smooth, d)
+    _, _ = snake.create_stabs()
+    hx, hz, trans_dict = snake.gen_checks()
+    return hx, hz, snake
+
 if __name__ == "__main__":
-    import pymatching
-    import stim
+    # import pymatching
+    # import stim
+    #
+    # hx, hz, snake = get_dist_three_sc_snakes(1)
+    # snake.plot_stabs(*logicals(snake, 3, hx, hz))
+    # rounds = 2
+    #
+    # circuit = snake.snake_memory_ckt(
+    #     rounds,
+    #     before_round_data_depolarization=0.0,
+    #     after_clifford_depolarization=0.0,
+    #     before_measure_flip_probability=0.0,
+    #     after_reset_flip_probability=0.0,
+    # )
+    # print(circuit.to_crumble_url())
+    # with open('timeline-svg.svg',"w") as f:
+    #     f.write(str(circuit.diagram('timeline-svg')))
+    # model = circuit.detector_error_model(decompose_errors=True)
+    # matching = pymatching.Matching.from_detector_error_model(model)
+    # sampler = circuit.compile_detector_sampler()
+    # syndrome, actual_observables = sampler.sample(shots=10000, separate_observables=True)
+    # predicted_observables = matching.decode_batch(syndrome)
+    # num_errors = np.sum(np.any(predicted_observables != actual_observables, axis=1))
+    import matplotlib.pyplot as plt
 
-    hx, hz, snake = get_dist_three_sc_snakes(1)
-    snake.plot_stabs(*logicals(snake, 3, hx, hz))
-    rounds = 2
+    basis = "Z"
+    lengths = [1]
+    ps = np.geomspace(0.0001, 0.02, 20)
+    distance = 3
+    tasks = []
+    title = 'sc-test2'
 
-    circuit = snake.snake_memory_ckt(
-        rounds,
-        before_round_data_depolarization=0.0,
-        after_clifford_depolarization=0.0,
-        before_measure_flip_probability=0.0,
-        after_reset_flip_probability=0.0,
+    for l in lengths:
+        # hx, hz,snake = get_varying_distance_len_3_sc_snakes(l)
+        hx,hz,snake = get_dist_three_sc_snakes(l)
+        lx, lz = logicals(snake, distance, hx, hz)
+        print("weight Z_L", len(lz))
+        print("weight X_L", len(lx))
+        snake.plot_stabs(lx,lz)
+        rounds = 3
+
+        for noise in ps:
+            circuit = snake.snake_memory_ckt(
+                rounds,
+                before_round_data_depolarization=noise,
+                after_clifford_depolarization=noise,
+                before_measure_flip_probability=noise,
+                after_reset_flip_probability=noise,
+            )
+            with open('timeline-svg-ncmp.svg', "w") as f:
+                f.write(str(circuit.diagram('timeline-svg')))
+            # print(f"smallest error stim: {len(circuit.shortest_graphlike_error())}")
+            dem = detector_error_model_to_check_matrices(circuit.detector_error_model()).check_matrix
+
+            print(circuit.count_determined_measurements())
+
+            print(f'num detectors: {circuit.num_detectors}')
+            print(f'num obsbls {circuit.num_observables}')
+            print(f'{circuit.to_crumble_url()}')
+            plt.matshow(dem.toarray())
+            plt.show()
+            print (len(circuit.shortest_graphlike_error()) == len(lx))
+            print(circuit.count_determined_measurements() == circuit.num_detectors+circuit.num_observables)
+            tasks.append(
+                sinter.Task(
+                    circuit=circuit,
+                    decoder="pymatching",
+                    json_metadata={
+                        "len": l,
+                        "p": noise,
+                        "basis": basis,
+                    },
+                )
+            )
+    data = sinter.collect(
+        num_workers=8,
+        tasks=tasks,
+        max_shots=1_000_000,
+        max_errors=750,
+        print_progress=True,
+        save_resume_filepath=f"{title}.csv",
+        decoders=['pymatching'],
     )
-    print(circuit.to_crumble_url())
-    with open('timeline-svg.svg',"w") as f:
-        f.write(str(circuit.diagram('timeline-svg')))
-    model = circuit.detector_error_model(decompose_errors=True)
-    matching = pymatching.Matching.from_detector_error_model(model)
-    sampler = circuit.compile_detector_sampler()
-    syndrome, actual_observables = sampler.sample(shots=10000, separate_observables=True)
-    predicted_observables = matching.decode_batch(syndrome)
-    num_errors = np.sum(np.any(predicted_observables != actual_observables, axis=1))
 
+    # plotting
+    import matplotlib.pyplot as plt
 
-    # basis = "Z"
-    # lengths = [1]
-    # ps = np.geomspace(0.008, 0.01, 10)
-    # distance = 3
-    # tasks = []
-    #
-    # for l in lengths:
-    #     hx, hz,snake = get_dist_three_sc_snakes(l)
-    #     snake.plot_stabs(*logicals(snake, distance, hx, hz))
-    #     rounds = distance
-    #
-    #     for noise in ps:
-    #         circuit = snake.snake_memory_ckt(
-    #             rounds,
-    #             before_round_data_depolarization=noise,
-    #             after_clifford_depolarization=noise,
-    #             before_measure_flip_probability=noise,
-    #             after_reset_flip_probability=noise,
-    #         )
-    #         tasks.append(
-    #             sinter.Task(
-    #                 circuit=circuit,
-    #                 decoder="pymatching",
-    #                 json_metadata={
-    #                     "len": l,
-    #                     "p": noise,
-    #                     "basis": basis,
-    #                 },
-    #             )
-    #         )
-    # data = sinter.collect(
-    #     num_workers=8,
-    #     tasks=tasks,
-    #     max_shots=500_000,
-    #     max_errors=500,
-    #     print_progress=True,
-    #     save_resume_filepath=f"sc-test.csv",
-    #     decoders=['pymatching'],
-    # )
-    #
-    # # plotting
-    # import matplotlib.pyplot as plt
-    #
-    # fig, ax = plt.subplots()
-    #
-    # sinter.plot_error_rate(
-    #     ax=ax,
-    #     stats=sinter.stats_from_csv_files("./news-test.csv"),
-    #     x_func=lambda task: task.json_metadata["p"],
-    #     # y_func=lambda task: task.error_rate,
-    #     group_func=lambda task: task.json_metadata["len"],
-    # )
-    # # ps = np.geomspace(0.001, 0.01, 10)
-    # for k in [1]:
-    #     ax.plot(ps, 1 - (1 - ps) ** k, label=f"Break-even k={k}", ls="--")
-    # # ax.set_xscale("log")
-    # ax.set_yscale("log")
-    # ax.legend()
-    # ax.set_title(f"sc-test")
-    # plt.show()
+    fig, ax = plt.subplots()
+
+    sinter.plot_error_rate(
+        ax=ax,
+        stats=sinter.stats_from_csv_files(f"./{title}.csv"),
+        x_func=lambda task: task.json_metadata["p"],
+        # y_func=lambda task: task.error_rate,
+        group_func=lambda task: task.json_metadata["len"],
+    )
+    # ps = np.geomspace(0.001, 0.01, 10)
+    for k in [1]:
+        ax.plot(ps, 1 - (1 - ps) ** k, label=f"Break-even k={k}", ls="--")
+    # ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.legend()
+    ax.set_title(f"sc-test")
+    plt.show()

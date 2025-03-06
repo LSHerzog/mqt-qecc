@@ -539,13 +539,29 @@ class SnakeBuilderSC:
                                  after_reset_flip_probability,
                                  ):
         z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule()
-        nr_data_qubits = len(data_qubit_positions)
+
+        pos_to_qubit = {}
+        for key, val in self.trans_dict.items():
+            pos_to_qubit[frozenset(key)] = val
+
+
+        nr_data_qubits = len(list(pos_to_qubit.keys()))
         data_register_indices = np.arange(nr_data_qubits)
         anc_register_indices = np.arange(nr_data_qubits, nr_data_qubits + len(z_check_schedule))
-        pos_to_qubit = {}
+        #print("nr_data_qubits", nr_data_qubits)
+        #print("data_register_indices", data_register_indices)
+        #print("anc_register_indices", anc_register_indices)
+        #print("z check schedule", len(z_check_schedule))
+        #pos_to_qubit = {}
 
-        for idx, edge in enumerate(data_qubit_positions):
-            pos_to_qubit[edge] = idx
+        #for idx, edge in enumerate(data_qubit_positions):
+        #    pos_to_qubit[edge] = idx
+
+
+
+        #print("lucas labels")
+        #for item in pos_to_qubit.items():
+        #    print(item)
 
         ### init block ###
         circuit = stim.Circuit()
@@ -593,6 +609,9 @@ class SnakeBuilderSC:
         _, hz, _ = self.gen_checks()
         m, n = hz.shape
 
+        #print("data_register_indices", data_reg_idxs)
+        #print("anc_register_indices", anc_reg_idxs)
+
         circuit = stim.Circuit()
         ######### INIT BLOCK #########
         circuit.append(f"RZ", data_reg_idxs)
@@ -618,7 +637,7 @@ class SnakeBuilderSC:
                 # coords due to loop
                 syndrome_cycle.append("SHIFT_COORDS", [], [0, 1])
 
-                # Adde detectors
+                # Add detectors
                 for idx in range(m):
                     # create detectors comparing measurement results between rounds
                     # e.g., measurement -2 * m + 0 = -2m and -m = -m+0
@@ -638,13 +657,14 @@ class SnakeBuilderSC:
         circuit.append(f"MZ", data_reg_idxs, before_measure_flip_probability)
 
         for idx, anc_idx in enumerate(anc_reg_idxs):
-            pcm = csr_matrix(hz)
-            bits = pcm[idx].indices
+            # hz uses trans_dict indexing
+            bits = csr_matrix(hz)[idx].indices
 
-            record_targets = [stim.target_rec(-m - n + anc_idx)]
+            record_targets = [stim.target_rec(-m - n + idx)]
+            print(f'record targets {stim.target_rec(-m - n + idx)}')
             for bit in bits:
                 record_targets.append(stim.target_rec(-n + bit))
-
+            print(f'check targets: {[t for t in record_targets]}')
             circuit.append("DETECTOR", record_targets, (anc_idx, 1))
 
         # iterate rows of logicals, add observable include
