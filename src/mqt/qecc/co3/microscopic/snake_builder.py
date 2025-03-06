@@ -46,6 +46,16 @@ class SnakeBuilderSC:
                                                           positions_smooth]) - 1  # -1 because we count edges not nodes
         assert dist == d, f"Distance d={dist} does not coincide with the geometry of the rough and smooth positions."
 
+        #must ensure that given G is big enough to place the stabilizers on it (maybe remove G from input and generate it within the class)
+        flat_smooth = {pos for group in positions_smooth for pos in group}
+        flat_rough = {pos for group in positions_rough for pos in group}
+        joint_positions = list(flat_smooth | flat_rough)
+        for pos in joint_positions:
+            if pos not in self.g.nodes():
+                msg = "The input graph is chosen too small and cannot accomodate all qubits for the stabs."
+                raise ValueError(msg)
+
+
     def fill_snake(self) -> list[list[tuple[int, int]]]:
         """Finds the true interior nodes by marking exterior nodes from all four edges.
 
