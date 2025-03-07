@@ -565,7 +565,7 @@ class SnakeBuilderSC:
 
         ### init block ###
         circuit = stim.Circuit()
-        # initial round of deploarizing noize on the data qubits ~ idling noise
+        # initial round of deploarizing noize on the data qubits ~ "idling" noise
         circuit.append("DEPOLARIZE1", data_register_indices, before_round_data_depolarization)
         circuit.append("TICK")
 
@@ -578,18 +578,35 @@ class SnakeBuilderSC:
 
         # iterate over steps in schedule and append all CX gates happening in this step
         # append 2 qubit dep noise after gate
-        for round in schedule:
-            for face_idx, face_sched in enumerate(z_check_schedule):
-                if round in face_sched:
-                    # if there is a CX scheduled in timestep 'round' of the face, apply gate
-                    qubit = pos_to_qubit[face_sched[round]]
-                    circuit.append("CX", [qubit, anc_register_indices[face_idx]])
-                    circuit.append(
-                        "DEPOLARIZE2",
-                        [qubit, anc_register_indices[face_idx]],
-                        after_clifford_depolarization,
-                    )
-                    circuit.append("TICK")
+
+        #naive schedule
+        for face_idx, face in enumerate(self.plaquettes):
+            check_targets = []
+            for edge in face:
+                qubit = pos_to_qubit[frozenset(edge)]
+                check_targets.append(36+qubit-68)
+                circuit.append("CX", [qubit, anc_register_indices[face_idx]])
+                circuit.append(
+                    "DEPOLARIZE2",
+                    [qubit, anc_register_indices[face_idx]],
+                    after_clifford_depolarization,
+                )
+                circuit.append("TICK")
+            print(f"check {-face_idx+68-18} qubits {check_targets}")
+
+        # optimized schedule
+        # for round in schedule:
+        #     for face_idx, face_sched in enumerate(z_check_schedule):
+        #         if round in face_sched:
+        #             # if there is a CX scheduled in timestep 'round' of the face, apply gate
+        #             qubit = pos_to_qubit[face_sched[round]]
+        #             circuit.append("CX", [qubit, anc_register_indices[face_idx]])
+        #             circuit.append(
+        #                 "DEPOLARIZE2",
+        #                 [qubit, anc_register_indices[face_idx]],
+        #                 after_clifford_depolarization,
+        #             )
+        #             circuit.append("TICK")
 
         # measure all ancillas
         circuit.append("MRZ", anc_register_indices, before_measure_flip_probability)
@@ -661,10 +678,10 @@ class SnakeBuilderSC:
             bits = csr_matrix(hz)[idx].indices
 
             record_targets = [stim.target_rec(-m - n + idx)]
-            print(f'record targets {stim.target_rec(-m - n + idx)}')
+            # print(f'record targets {stim.target_rec(-m - n + idx)}')
             for bit in bits:
                 record_targets.append(stim.target_rec(-n + bit))
-            print(f'check targets: {[t for t in record_targets]}')
+            print(f'det {idx} targets: {[t for t in record_targets]}')
             circuit.append("DETECTOR", record_targets, (anc_idx, 1))
 
         # iterate rows of logicals, add observable include

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import networkx as nx
+import stim
 from scipy.sparse import csr_matrix
 import sinter
 import numpy as np
@@ -329,6 +330,34 @@ def get_varying_distance_len_3_sc_snakes(d):
     hx, hz, trans_dict = snake.gen_checks()
     return hx, hz, snake
 
+def count_deterministic_measurements(measurement_loop: stim.Circuit):
+    result = 0
+    measurements = []
+    simulator = stim.TableauSimulator()
+
+    # Do a few iterations to get into the steady state.
+    simulator.do(measurement_loop * 10)
+
+    # Do an iteration counting the number of determined measurements.
+    for instruction in measurement_loop:
+        # TODO: recurse into sub-loops if needed
+        assert isinstance(instruction, stim.CircuitInstruction)
+        # TODO: generalize this to work for all measurement operations.
+        assert instruction.name not in ["MX", "MY", "MRX", "MRY", "MPP"]
+
+        if instruction.name in ["M", "MR"]:
+            for gate_target in instruction.targets_copy():
+                assert gate_target.is_qubit_target
+                is_random = simulator.peek_z(gate_target.value) == 0
+                if not is_random:
+                    result += 1
+                else:
+                    measurements.append(gate_target)
+        simulator.do(instruction)
+
+    return result, measurements
+
+
 if __name__ == "__main__":
     # import pymatching
     # import stim
@@ -360,7 +389,7 @@ if __name__ == "__main__":
     ps = np.geomspace(0.0001, 0.02, 20)
     distance = 3
     tasks = []
-    title = 'sc-test2'
+    title = 'sc-test'
 
     for l in lengths:
         # hx, hz,snake = get_varying_distance_len_3_sc_snakes(l)
@@ -369,7 +398,7 @@ if __name__ == "__main__":
         print("weight Z_L", len(lz))
         print("weight X_L", len(lx))
         snake.plot_stabs(lx,lz)
-        rounds = 3
+        rounds = 5
 
         for noise in ps:
             circuit = snake.snake_memory_ckt(
@@ -379,20 +408,20 @@ if __name__ == "__main__":
                 before_measure_flip_probability=noise,
                 after_reset_flip_probability=noise,
             )
-            with open('timeline-svg-ncmp.svg', "w") as f:
+            with open('timeline-svg.svg', "w") as f:
                 f.write(str(circuit.diagram('timeline-svg')))
             # print(f"smallest error stim: {len(circuit.shortest_graphlike_error())}")
             dem = detector_error_model_to_check_matrices(circuit.detector_error_model()).check_matrix
-
-            print(circuit.count_determined_measurements())
-
             print(f'num detectors: {circuit.num_detectors}')
             print(f'num obsbls {circuit.num_observables}')
-            print(f'{circuit.to_crumble_url()}')
             plt.matshow(dem.toarray())
             plt.show()
-            print (len(circuit.shortest_graphlike_error()) == len(lx))
-            print(circuit.count_determined_measurements() == circuit.num_detectors+circuit.num_observables)
+            # print(f"count and meas: {count_deterministic_measurements(circuit)}")
+
+            print(circuit.to_crumble_url())
+            print(f'check matrix shape {hz.shape}')
+            assert(len(circuit.shortest_graphlike_error()) == len(lx)), f"{len(circuit.shortest_graphlike_error())} vs lx = {len(lx)}"
+            assert(circuit.count_determined_measurements() == circuit.num_detectors+circuit.num_observables), f"det.meas {circuit.count_determined_measurements()} vs #obsbs {circuit.num_observables} + #det {circuit.num_detectors}"
             tasks.append(
                 sinter.Task(
                     circuit=circuit,
