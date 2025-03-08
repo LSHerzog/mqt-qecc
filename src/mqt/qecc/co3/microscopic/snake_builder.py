@@ -333,7 +333,7 @@ class SnakeBuilderSC:
         self.trans_dict = trans_dict
         return hx, hz, trans_dict
 
-    def plot_stabs(self, opz: list | None = None, opx: list | None = None) -> None:
+    def plot_stabs(self, opz: list | None = None, opx: list | None = None, size: tuple[int,int] = (8,8)) -> None:
         """Plots plaquettes and star operators as well as the snake itself.
 
         opz and opx are the logical operators retrieved via mqt.qecc.CSSCode which are already translated as edges on the graph.
@@ -343,7 +343,7 @@ class SnakeBuilderSC:
 
         midpoints = [((x1 + x2) / 2, (y1 + y2) / 2) for (x1, y1), (x2, y2) in self.qubit_edges]
 
-        plt.figure(figsize=(8, 8))
+        plt.figure(figsize=size)
         nx.draw(self.g, pos, with_labels=True, node_size=100, edge_color="lightgray", font_size=8)
 
         for star in self.stars:
