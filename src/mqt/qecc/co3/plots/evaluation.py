@@ -329,7 +329,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     metric = hc_params["metric"]
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
-    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24.pdf"
+    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24_240308.pdf"
 
     plt.savefig(file_path)
     plt.show()
@@ -421,7 +421,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     # Add colorbar
     cbar = plt.colorbar(im)
-    cbar.set_label("Mean Layer Reduction $(n_i-n_f)/n_i$")  # Label for the colorbar
+    cbar.set_label("Mean Improvement $(n_i-n_f)/n_i$")  # Label for the colorbar
 
     plt.xlabel("Reset time $t$")
     plt.ylabel("Number of factories")
@@ -451,7 +451,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     ax.set_xlabel("Reset time $t$")
     ax.set_ylabel("Number of factories")
-    ax.set_zlabel("Mean Layer Reduction $(n_i - n_f) / n_i$")
+    ax.set_zlabel("Mean Improvement $(n_i - n_f) / n_i$")
 
     ax.legend()
     plt.show()
@@ -603,7 +603,7 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
 
     # Add colorbar
     cbar = plt.colorbar(im)
-    cbar.set_label("Mean Layer Reduction $(n_i-n_f)/n_i$")  # Label for the colorbar
+    cbar.set_label("Mean Improvement $(n_i-n_f)/n_i$")  # Label for the colorbar
 
     plt.xlabel("Reset time $t$")
     plt.ylabel(r"$\alpha = \frac{CNOTS}{all}$")

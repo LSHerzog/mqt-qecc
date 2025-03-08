@@ -240,6 +240,7 @@ def translate_layout_circuit(pairs: list[tuple[int, int] | int], layout: dict) -
 
 def compare_original_dynamic_gate_order(q:int, layout: dict, router: co.ShortestFirstRouterTGatesDyn) -> bool:
     """Generates a qiskit circuit for both the order after doing dynamic routing and the original order.
+    
     Hence, it is checked whether the many reorderings in dynamic routing are really safe and sound.
 
     Args: 
@@ -290,6 +291,12 @@ def compare_original_dynamic_gate_order(q:int, layout: dict, router: co.Shortest
         else:  # If it's not a tuple (single number, shouldn't happen based on your input)
             raise ValueError(f"Unexpected element in data: {item}")
         
+
+    #switch on purpose two entries which is wrong to check whether this is recognized
+    #temp = translated_routing[0]
+    #translated_routing[0] = translated_routing[-1]
+    #translated_routing[-1] = temp
+        
     #initialize random state (s.t. CNOT and T are not trivially appplied)
     random_state = random_statevector(2**q)
 
@@ -305,7 +312,7 @@ def compare_original_dynamic_gate_order(q:int, layout: dict, router: co.Shortest
         else:  # Apply Hadamard for single qubit
             qc_previous.h(op)
 
-    backend = AerSimulator(method='statevector')
+    backend = AerSimulator(method="statevector")
     qc_previous.save_statevector()
     pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
     qc_combine = pm.run(qc_previous)
@@ -324,12 +331,12 @@ def compare_original_dynamic_gate_order(q:int, layout: dict, router: co.Shortest
         else:  # Apply Hadamard for single qubit
             qc_routing.h(op)
 
-    backend = AerSimulator(method='statevector')
+    backend2 = AerSimulator(method="statevector")
     qc_routing.save_statevector()
-    pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
-    qc_combine = pm.run(qc_routing)
+    pm2 = generate_preset_pass_manager(backend=backend2, optimization_level=1)
+    qc_combine = pm2.run(qc_routing)
 
-    result2 = backend.run(qc_routing, shots= 1)
+    result2 = backend2.run(qc_routing, shots= 1)
     psi_out_complex_2 = result2.result()
 
     diff = np.linalg.norm(psi_out_complex.data()["statevector"] - psi_out_complex_2.data()["statevector"])

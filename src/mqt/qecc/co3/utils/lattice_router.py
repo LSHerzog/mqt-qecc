@@ -999,6 +999,16 @@ class ShortestFirstRouterTGates(HexagonalLattice):
 
         #print("vdp dict", vdp_dict)  
         #print("terminal pairs remainder", terminal_pairs_remainder)  
+        
+        #check whether the keys in vdp_dict fit the start and end point of the path
+        for pair, path in vdp_dict.items():
+            start, end = path[0], path[-1]
+            if isinstance(pair[0], tuple) and isinstance(pair[1], tuple) and set(pair) != {start, end}:
+                    msg = f"The path does not coincide with the terminal pair. There is a bug. terminal_pair = {pair} but path = {path}"
+                    raise RuntimeError(msg)
+            if isinstance(pair[0], int) and isinstance(pair[1], int) and pair not in {start, end}:
+                    msg = f"The path does not coincide with the T gate location. There is a bug. terminal_pair = {pair} but path = {path}"
+                    raise RuntimeError(msg)
 
 #----------------------------
 
@@ -1168,10 +1178,10 @@ class ShortestFirstRouterTGatesDyn(ShortestFirstRouterTGates):
         while len(self.layers_cnot_t) > 0:
             #do not forget to use order_terminal_pairs before routing (update after each new layer)
             #print("new layers_cnot_t", self.layers_cnot_t_orig)
-            ##!TODO comment this reordering out?
+            ## ! this reordering is commented out because we adapted find_max_vdp_layers to determine shortest path iteratively, without predetermined ordering
             #for i in range(len(self.layers_cnot_t_orig)):
             #    self.order_terminal_pairs(i)
-            #    self.layers_cnot_t = self.layers_cnot_t_orig # ! I am slowing down the algorihtm here by repeatedly ordering the adapted initia layers.
+            #    self.layers_cnot_t = self.layers_cnot_t_orig
             #print("ordered", self.layers_cnot_t)
             layer = 0 #since we adapt the layers_cnot_t_orig inplace, always layer=0 needed
             vdp_dict, terminal_pairs_remainder = self.find_max_vdp_set(layer) #layer is successively reordered within find_max_vdp_set
@@ -1212,6 +1222,9 @@ class ShortestFirstRouterTGatesDyn(ShortestFirstRouterTGates):
         for lst in vdp_layers:
             keys += lst.keys()
         assert len(keys) == len(self.terminal_pairs), f"The dynamic routing has a bug. There are {len(self.terminal_pairs)} to be routed, but the final vdp_layers only has {len(keys)} paths."
+        #also check whether each key can be found in terminal pairs and vice versa
+        assert set(keys) == set(self.terminal_pairs), "The dynamic routing has a bug. The finally routed pairs do not coincide with the given terminal_pairs."
+        
         return vdp_layers
             
 
