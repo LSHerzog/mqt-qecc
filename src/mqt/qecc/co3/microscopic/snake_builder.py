@@ -681,7 +681,7 @@ class SnakeBuilderSC:
             # print(f'record targets {stim.target_rec(-m - n + idx)}')
             for bit in bits:
                 record_targets.append(stim.target_rec(-n + bit))
-            print(f'det {idx} targets: {[t for t in record_targets]}')
+            # print(f'det {idx} targets: {[t for t in record_targets]}')
             circuit.append("DETECTOR", record_targets, (anc_idx, 1))
 
         # iterate rows of logicals, add observable include

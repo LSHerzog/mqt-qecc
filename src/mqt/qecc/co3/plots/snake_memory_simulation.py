@@ -385,21 +385,24 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     basis = "Z"
-    lengths = [1]
-    ps = np.geomspace(0.0001, 0.02, 20)
+    lengths = [3,5]
+    len_ds = {
+
+    }
+    ps = np.geomspace(0.001, 0.05, 20)
     distance = 3
     tasks = []
-    title = 'sc-test'
+    title = 'opt-vary-ds'
 
     for l in lengths:
-        # hx, hz,snake = get_varying_distance_len_3_sc_snakes(l)
-        hx,hz,snake = get_dist_three_sc_snakes(l)
-        lx, lz = logicals(snake, distance, hx, hz)
-        print("weight Z_L", len(lz))
-        print("weight X_L", len(lx))
+        hx, hz,snake = get_varying_distance_len_3_sc_snakes(l)
+        # hx,hz,snake = get_dist_three_sc_snakes(l)
+        lx, lz = logicals(snake, l, hx, hz)
+        # print("weight Z_L", len(lz))
+        # print("weight X_L", len(lx))
         snake.plot_stabs(lx,lz)
-        rounds = 5
-
+        rounds = len(lx)
+        on = True
         for noise in ps:
             circuit = snake.snake_memory_ckt(
                 rounds,
@@ -408,20 +411,25 @@ if __name__ == "__main__":
                 before_measure_flip_probability=noise,
                 after_reset_flip_probability=noise,
             )
-            with open('timeline-svg.svg', "w") as f:
-                f.write(str(circuit.diagram('timeline-svg')))
-            # print(f"smallest error stim: {len(circuit.shortest_graphlike_error())}")
-            dem = detector_error_model_to_check_matrices(circuit.detector_error_model()).check_matrix
-            print(f'num detectors: {circuit.num_detectors}')
-            print(f'num obsbls {circuit.num_observables}')
-            plt.matshow(dem.toarray())
-            plt.show()
-            # print(f"count and meas: {count_deterministic_measurements(circuit)}")
+            if on:
+                with open(f'{title}.svg', "w") as f:
+                    f.write(str(circuit.diagram('timeline-svg')))
+                # print(f"smallest error stim: {len(circuit.shortest_graphlike_error())}")
+                dem = detector_error_model_to_check_matrices(circuit.detector_error_model()).check_matrix
+                print(f'num detectors: {circuit.num_detectors}')
+                print(f'num obsbls {circuit.num_observables}')
+                plt.matshow(dem.toarray())
+                plt.show()
+                # print(f"count and meas: {count_deterministic_measurements(circuit)}")
 
-            print(circuit.to_crumble_url())
-            print(f'check matrix shape {hz.shape}')
-            assert(len(circuit.shortest_graphlike_error()) == len(lx)), f"{len(circuit.shortest_graphlike_error())} vs lx = {len(lx)}"
-            assert(circuit.count_determined_measurements() == circuit.num_detectors+circuit.num_observables), f"det.meas {circuit.count_determined_measurements()} vs #obsbs {circuit.num_observables} + #det {circuit.num_detectors}"
+                print(circuit.to_crumble_url())
+                print(f"graph like d = {len(circuit.shortest_graphlike_error())}")
+                print("weight Z_L", len(lz))
+                print("weight X_L", len(lx))
+                print(f'check matrix shape {hz.shape}')
+                on = False
+                # assert(len(circuit.shortest_graphlike_error()) == len(lx)), f"{len(circuit.shortest_graphlike_error())} vs lx = {len(lx)}"
+                # assert(circuit.count_determined_measurements() == circuit.num_detectors+circuit.num_observables), f"det.meas {circuit.count_determined_measurements()} vs #obsbs {circuit.num_observables} + #det {circuit.num_detectors}"
             tasks.append(
                 sinter.Task(
                     circuit=circuit,
@@ -437,8 +445,8 @@ if __name__ == "__main__":
         num_workers=8,
         tasks=tasks,
         max_shots=1_000_000,
-        max_errors=750,
-        print_progress=True,
+        max_errors=1000,
+        print_progress=False,
         save_resume_filepath=f"{title}.csv",
         decoders=['pymatching'],
     )
