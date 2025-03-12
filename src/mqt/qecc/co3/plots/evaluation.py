@@ -106,6 +106,7 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
 
         logger.info(f"=======Instance {l}=======")
         time = []
+        time2 = []
         q = instance["q"]
         t = instance["t"]
         #min_depth = instance["min_depth"]
@@ -138,6 +139,11 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
         final_layout_lst = []
         num_final_lst = []
         num_init_lst = []
+        #for routing metric
+        init_layout_lst2 = []
+        final_layout_lst2 = []
+        num_final_lst2 = []
+        num_init_lst2 = []
 
         for circuit in circuits:
             #generate random circ
@@ -231,7 +237,7 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
 
                 #do the initial routing
                 input_layout = score_history[best_rep]["layout_init"]
-                init_layout_lst.append(input_layout)
+                init_layout_lst2.append(input_layout)
                 factory_positions = input_layout["factory_positions"]
                 terminal_pairs = co.translate_layout_circuit(circuit, input_layout)
                 router = co.ShortestFirstRouterTGatesDyn(m = hc.m, n = hc.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = t)
@@ -240,12 +246,12 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
                 #update routing graph
                 vdp_layers_initial_dyn = router.find_total_vdp_layers_dyn()
                 num_initial_dyn = len(vdp_layers_initial_dyn)
-                num_init_lst.append(num_initial_dyn)
+                num_init_lst2.append(num_initial_dyn)
 
 
                 #do the optimized routing
                 input_layout = score_history[best_rep]["layout_final"]
-                final_layout_lst.append(input_layout)
+                final_layout_lst2.append(input_layout)
                 factory_positions = input_layout["factory_positions"]
                 terminal_pairs = co.translate_layout_circuit(circuit, input_layout)
                 router = co.ShortestFirstRouterTGatesDyn(m = hc.m, n = hc.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = t)
@@ -254,15 +260,14 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
                 #update routing graph
                 vdp_layers_final_dyn = router.find_total_vdp_layers_dyn()
                 num_final_dyn = len(vdp_layers_final_dyn)
-                num_final_lst.append(num_final_dyn)
+                num_final_lst2.append(num_final_dyn)
 
                 #add time
-                time.append(num_final_dyn)
+                time2.append(num_final_dyn)
             logger.info(f"time = {time}")
-            logger.info({"space": space, "time_mean": np.mean(time), "time_std": np.std(time)})
-            res_lst_routing.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time), "num_init_lst": num_init_lst, "num_final_lst": num_final_lst, "init_layout_lst": init_layout_lst, "final_layout_lst": final_layout_lst, "instances": instances, "hc_params": hc_params, "circuits": circuits})
-            new_part = "metricrouting"
-            new_path = path.rsplit(".pdf", 1)[0] + "_" + new_part + ".pdf"
+            logger.info({"space": space, "time_mean": np.mean(time2), "time_std": np.std(time2)})
+            res_lst_routing.append({"space": space, "time_mean": np.mean(time2), "time_std": np.std(time2), "num_init_lst": num_init_lst2, "num_final_lst": num_final_lst2, "init_layout_lst": init_layout_lst2, "final_layout_lst": final_layout_lst2, "instances": instances, "hc_params": hc_params, "circuits": circuits})
+            new_path = path + "_metricrouting"
             with Path(new_path).open("wb") as f:
                 pickle.dump(res_lst_routing, f)
 
