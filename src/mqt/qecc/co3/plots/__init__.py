@@ -6,6 +6,7 @@ from .evaluation import (
     collect_data_space_time,
     plot_f_vs_t,
     plot_improvement_circuit_types,
+    plot_improvement_f_variation,
     plot_ratio_vs_t,
     plot_space_time,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "gen_layout",
     "plot_f_vs_t",
     "plot_improvement_circuit_types",
+    "plot_improvement_f_variation",
     "plot_ratio_vs_t",
     "plot_space_time"
     ]  # Controls what gets imported when using 'from co3.plots import *'

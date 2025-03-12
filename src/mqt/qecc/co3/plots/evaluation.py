@@ -15,7 +15,7 @@ import itertools
 import mqt.qecc.co3 as co
 
 
-def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, path: str) -> list[dict]:
+def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, path: str, both_metric: bool = False) -> list[dict]:
     """Collects the data for a run which will compare space and time cost.
 
     Args:
@@ -25,6 +25,8 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
         hc_params (dict): contains a value for metric, max_restarts, max_iterations, routing, optimize_factories, free_rows, parallel
         reps (int): Number of random circuits per instance (each optimized with hc and routed)
         path (str): where to store the res_lst (also intermedate save points)
+        both_metric (bool): if False, just what metric is defined in hc_params. if True, both the crossing and the routing metric are used
+            this is necessary as running collect_data_space_time two separate times would use different sampled circuits for both runs.
         
     Returns:
         list[dict]: results dictionary for each instance (same order as instances.)
@@ -42,6 +44,11 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
     assert set(hc_params.keys()) == hc_par_set, "Wrong input for `hc_params`."
     # ! layout_type for hc must be manual
     res_lst = []
+
+    if both_metric:
+        #both metric can only be done if hc_params has "crossing in it"
+        assert hc_params["metric"] == "crossing", "For both_metric == True you need to choose crossing in hc_params, to ensure that we have in the end both crossing and routing metric"
+        res_lst_routing = []
 
     #sample circuits (should be the same for those instances for which q, min_depth, tgate, ratio) coincide
     #thus initialize with first instance's value and only change them if those values differ for the new instance
@@ -192,6 +199,73 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
         res_lst.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time), "num_init_lst": num_init_lst, "num_final_lst": num_final_lst, "init_layout_lst": init_layout_lst, "final_layout_lst": final_layout_lst, "instances": instances, "hc_params": hc_params, "circuits": circuits})
         with Path(path).open("wb") as f:
             pickle.dump(res_lst, f)
+
+        #lot of redundant code but too lazy right now
+        if both_metric:
+            logger.info("Run of additional hc with metric=routing")
+            for circuit in circuits:
+                #generate random circ
+                #circuit = co.generate_random_circuit(q, min_depth, tgate, ratio)
+                metric = "routing"
+                #do hill climbing
+                hc = co.HillClimbing(
+                    max_restarts,
+                    max_iterations,
+                    circuit,
+                    layout_type,
+                    m,
+                    n,
+                    metric,
+                    factory_locs,
+                    len(factory_locs), # do not include different factory locations in opt
+                    free_rows, 
+                    t, 
+                    optimize_factories, 
+                    custom_layout, 
+                    routing
+                )
+                #hard coded for now
+                prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
+                suffix = "test_250218_2"
+                _, _, best_rep, score_history = hc.run(prefix, suffix, parallel, processes)
+
+                #do the initial routing
+                input_layout = score_history[best_rep]["layout_init"]
+                init_layout_lst.append(input_layout)
+                factory_positions = input_layout["factory_positions"]
+                terminal_pairs = co.translate_layout_circuit(circuit, input_layout)
+                router = co.ShortestFirstRouterTGatesDyn(m = hc.m, n = hc.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = t)
+                if custom_layout is not None:
+                    router.G = g
+                #update routing graph
+                vdp_layers_initial_dyn = router.find_total_vdp_layers_dyn()
+                num_initial_dyn = len(vdp_layers_initial_dyn)
+                num_init_lst.append(num_initial_dyn)
+
+
+                #do the optimized routing
+                input_layout = score_history[best_rep]["layout_final"]
+                final_layout_lst.append(input_layout)
+                factory_positions = input_layout["factory_positions"]
+                terminal_pairs = co.translate_layout_circuit(circuit, input_layout)
+                router = co.ShortestFirstRouterTGatesDyn(m = hc.m, n = hc.n, terminal_pairs = terminal_pairs, factory_positions = factory_positions, t = t)
+                if custom_layout is not None:
+                    router.G = g
+                #update routing graph
+                vdp_layers_final_dyn = router.find_total_vdp_layers_dyn()
+                num_final_dyn = len(vdp_layers_final_dyn)
+                num_final_lst.append(num_final_dyn)
+
+                #add time
+                time.append(num_final_dyn)
+            logger.info(f"time = {time}")
+            logger.info({"space": space, "time_mean": np.mean(time), "time_std": np.std(time)})
+            res_lst_routing.append({"space": space, "time_mean": np.mean(time), "time_std": np.std(time), "num_init_lst": num_init_lst, "num_final_lst": num_final_lst, "init_layout_lst": init_layout_lst, "final_layout_lst": final_layout_lst, "instances": instances, "hc_params": hc_params, "circuits": circuits})
+            new_part = "metricrouting"
+            new_path = path.rsplit(".pdf", 1)[0] + "_" + new_part + ".pdf"
+            with Path(new_path).open("wb") as f:
+                pickle.dump(res_lst_routing, f)
+
 
     return res_lst
 
@@ -430,7 +504,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
-    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
 
     plt.show()
@@ -456,7 +530,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     ax.legend()
     plt.show()
 
-    file_path = Path(path) / f"f_vs_t_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    file_path = Path(path) / f"f_vs_t_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
 
     plt.clf()
@@ -489,7 +563,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
-    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
 
     plt.show()
@@ -517,7 +591,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     ax.legend()
     plt.show()
 
-    file_path = Path(path) / f"f_vs_t_abslayers_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}.pdf"
+    file_path = Path(path) / f"f_vs_t_abslayers_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
 
     
@@ -743,8 +817,157 @@ def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict],
     metric = hc_params["metric"]
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
-    file_path = Path(path) / f"space_time_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}.pdf"
+    file_path = Path(path) / f"space_time_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_250308_new.pdf"
 
     plt.savefig(file_path)
     plt.show()
 
+
+def plot_improvement_f_variation(res_lst_crossing: list[dict], res_lst_routing: list[dict], t:int, ratio:float, q:int, min_depth:int, path: str = "./results", size:tuple[int,int] = (5,4)) -> None:
+    """Plots the hc improvement v.s. number of f for fixed t.
+
+    Plot graphs for multiple layouts and metrics
+
+    Args:
+        res_lst (list[dict]): _description_
+        q (int): _description_
+        layout_name (str): _description_
+        min_depth (int): _description_
+        path (str, optional): _description_. Defaults to "./results".
+        size (tuple[int,int], optional): _description_. Defaults to (5,4).
+    """
+    #extract data for both the crossing and the routing metric run
+    instances_crossing = res_lst_crossing[0]["instances"] #index does not matter because accidentally stored redundantely.
+    hc_params_crossing = res_lst_crossing[0]["hc_params"]
+
+    instances_routing = res_lst_routing[0]["instances"] #index does not matter because accidentally stored redundantely.
+    hc_params_routing = res_lst_routing[0]["hc_params"]
+
+
+    idx_include_c = []
+    for i, instance in enumerate(instances_crossing):
+        if instance["q"] == q and instance["ratio"] == ratio and instance["min_depth"] == min_depth and instance["t"] == t:
+            idx_include_c.append(i)
+    idx_include_r = []
+    for i, instance in enumerate(instances_routing):
+        if instance["q"] == q and instance["ratio"] == ratio and instance["min_depth"] == min_depth and instance["t"] == t:
+            idx_include_r.append(i)
+
+    dct_mat_c = [] #gather for each included idx the important outcomes
+    for i, instance in enumerate(instances_crossing):
+        if i in idx_include_c:
+            res = res_lst_crossing[i]
+            num_init_lst = res["num_init_lst"]
+            num_final_lst = res["num_final_lst"]    
+            improvements = []
+            for ni, nf in zip(num_init_lst, num_final_lst):
+                improvements.append((ni-nf)/ni)
+            mean_improvement = np.mean(improvements)
+            std_imrovement = np.std(improvements)
+            dct_mat_c.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"], "layout_name": instance["layout_name"]})
+
+    dct_mat_r = [] #gather for each included idx the important outcomes
+    for i, instance in enumerate(instances_routing):
+        if i in idx_include_r:
+            res = res_lst_routing[i]
+            num_init_lst = res["num_init_lst"]
+            num_final_lst = res["num_final_lst"]    
+            improvements = []
+            for ni, nf in zip(num_init_lst, num_final_lst):
+                improvements.append((ni-nf)/ni)
+            mean_improvement = np.mean(improvements)
+            std_imrovement = np.std(improvements)
+            dct_mat_r.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"], "layout_name": instance["layout_name"]})
+   
+    #gather the lists where each list should form a graph i.e. a list for each metric / layout type and length should be number of different factoriy numbers.
+    available_f_c = set()
+    available_layout_c = set()
+    for el in dct_mat_c:
+        available_f_c.add(len(el["factory_locs"]))
+        available_layout_c.add(el["layout_name"])
+
+    available_f_r = set()
+    available_layout_r = set()
+    for el in dct_mat_r:
+        available_f_r.add(len(el["factory_locs"]))
+        available_layout_r.add(el["layout_name"])
+
+    #assert avalable values should be the same for routing and crossing metric
+    assert available_f_c == available_f_r, "Choose your data such that runs for both metrics provide same values for the number of factories"
+    assert available_layout_r == available_layout_c, "Choose your data such that runs for both metrics provide same values for the layouts"
+
+    #gather together lists for each graph
+    data_c = np.zeros((len(available_f_c), len(available_layout_c)))
+    data_std_c = data_c.copy()
+    data_abs_c = data_c.copy()
+    data_abs_std_c = data_c.copy()
+
+    data_r = data_c.copy()
+    data_std_r = data_c.copy()
+    data_abs_r = data_c.copy()
+    data_abs_std_r = data_c.copy()
+
+    available_f_c = sorted(available_f_c)
+
+    available_f_dct = {f: i for i, f in enumerate(available_f_c)}
+    available_layout_dct = {f: i for i, f in enumerate(available_layout_c)}
+
+    for el in dct_mat_c:
+        f_idx = available_f_dct[len(el["factory_locs"])]
+        l_idx = available_layout_dct[el["layout_name"]]
+        data_c[f_idx, l_idx] =el["mean_improvement"]
+        data_std_c[f_idx, l_idx] = el["std_improvement"]
+        data_abs_c[f_idx, l_idx] = el["mean_final_layers"]
+        data_abs_std_c[f_idx, l_idx] = el["std_final_layers"]
+
+    for el in dct_mat_r:
+        f_idx = available_f_dct[len(el["factory_locs"])]
+        l_idx = available_layout_dct[el["layout_name"]]
+        data_r[f_idx, l_idx] =el["mean_improvement"]
+        data_std_r[f_idx, l_idx] = el["std_improvement"]
+        data_abs_r[f_idx, l_idx] = el["mean_final_layers"]
+        data_abs_std_r[f_idx, l_idx] = el["std_final_layers"]
+
+
+    print("data_c")
+    print(data_c)
+    print("data_std_c")
+    print(data_std_c)
+    print("data_abs_c")
+    print(data_abs_c)
+    print("data_abs_Std_c")
+    print(data_abs_std_c)
+
+    #define colors for each layout and use different line types for the metrics. however you have two lsits, so do it directly
+    colors = plt.cm.rainbow(np.linspace(0, 1, 7))
+    _, ax = plt.subplots(figsize=size)
+
+    for k,lay in enumerate(available_layout_c):
+        #routing metric
+        ax.errorbar(list(available_f_c), data_c[:,k], yerr=data_std_c[:,k], color=colors[k], fmt="o", linestyle = "--", label = f"{lay}, crossing")
+        #crossing metric
+        ax.errorbar(list(available_f_r), data_r[:,k], yerr=data_std_r[:,k], color=colors[k], fmt="v", linestyle = "--", label = f"{lay}, routing")
+
+    #plt.yticks(ticks=list(available_f_dct.values()), labels=list(available_f_dct.keys()), rotation=45)
+    plt.legend()
+    ax.set_ylabel("Mean improvement $(n_i-n_f)/n_i$")
+    ax.set_xlabel("Number of factories")
+
+    #only integer x
+    ax.set_xticks(available_f_c)
+    ax.set_xticklabels(available_f_c) 
+
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7) 
+    plt.tight_layout()
+
+
+    max_restarts_c = hc_params_crossing["max_restarts"]
+    max_iterations_c = hc_params_crossing["max_iterations"]
+    max_restarts_r = hc_params_routing["max_restarts"]
+    max_iterations_r = hc_params_routing["max_iterations"]
+    assert max_iterations_r == max_iterations_c
+    assert max_restarts_c == max_restarts_r
+    assert len(instances_crossing) == len(instances_routing)
+    filepath = Path(path) / f"f_variation_t{t}_restarts{max_restarts_c}_it{max_iterations_c}_numinstances{len(instances_routing)}_q{q}_ratio{ratio}_depth{min_depth}.pdf"
+    plt.savefig(filepath)
+    plt.show()
