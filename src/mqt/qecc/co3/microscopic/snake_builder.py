@@ -540,7 +540,6 @@ class SnakeBuilderSC:
                                  naive=False
                                  ):
         z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule()
-        _, hx, _ = self.gen_checks()
         pos_to_qubit = {}
         for key, val in self.trans_dict.items():
             pos_to_qubit[frozenset(key)] = val
@@ -548,7 +547,8 @@ class SnakeBuilderSC:
         nr_data_qubits = len(list(pos_to_qubit.keys()))
         data_register_indices = np.arange(nr_data_qubits)
         z_anc_reg_indices = np.arange(nr_data_qubits, nr_data_qubits+len(z_check_schedule))
-        x_anc_register_indices = np.arange(nr_data_qubits + len(z_check_schedule), nr_data_qubits + len(z_check_schedule) + hx.shape[0])
+        x_anc_register_indices = np.arange(nr_data_qubits + len(z_check_schedule), nr_data_qubits + len(z_check_schedule) + len(
+            self.gen_stars()))
 
         ### init block ###
         circuit = stim.Circuit()
