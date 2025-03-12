@@ -38,16 +38,15 @@ if __name__ == "__main__":
     # predicted_observables = matching.decode_batch(syndrome)
     # num_errors = np.sum(np.any(predicted_observables != actual_observables, axis=1))
     import matplotlib.pyplot as plt
-    lengths = [1,2,3]
+    lengths = [3,5,7]
     ps = np.geomspace(0.001, 0.02, 15)
     tasks = []
     naive=False
     title = f'naive={naive}-new-varying-ds'
 
     for l in lengths:
-        # hx, hz,snake = get_varying_d_snakes(l)
+        hx, hz,snake = get_varying_d_snakes(l)
         # hx,hz,snake = get_d5_different_length_sc_snakes(l)
-        hx,hz, snake = get_dist_three_sc_snakes(l)
         lx, lz = logicals(snake, l, hx, hz)
         # print("weight Z_L", len(lz))
         # print("weight X_L", len(lx))
@@ -71,8 +70,8 @@ if __name__ == "__main__":
                 dem = detector_error_model_to_check_matrices(circuit.detector_error_model()).check_matrix
                 print(f'num detectors: {circuit.num_detectors}')
                 print(f'num obsbls {circuit.num_observables}')
-                plt.matshow(dem.toarray())
-                plt.show()
+                # plt.matshow(dem.toarray())
+                # plt.show()
                 # print(f"count and meas: {count_deterministic_measurements(circuit)}")
 
                 # print(circuit.to_crumble_url())
@@ -92,12 +91,13 @@ if __name__ == "__main__":
                         "len": l,
                         "p": noise,
                         "basis": "Z",
-                        "graph-d": graph_d
+                        "graph-d": graph_d,
+                        "rounds":rounds
                     },
                 )
             )
     data = sinter.collect(
-        num_workers=8,
+        num_workers=7,
         tasks=tasks,
         max_shots=500000,
         max_errors=750,
@@ -115,6 +115,7 @@ if __name__ == "__main__":
         ax=ax,
         stats=sinter.stats_from_csv_files(f"./{title}.csv"),
         x_func=lambda task: task.json_metadata["p"],
+        failure_units_per_shot_func=lambda task: task.json_metadata['rounds'],
         # y_func=lambda task: task.error_rate,
         group_func=lambda task: task.json_metadata["len"],
     )

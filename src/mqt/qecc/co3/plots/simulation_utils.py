@@ -5,6 +5,8 @@ import sinter
 import stim
 from scipy.sparse import csr_matrix
 import numpy as np
+import matplotlib.pyplot as plt
+from sinter._plotting import plot_custom
 
 from src.mqt.qecc import CSSCode
 from src.mqt.qecc.co3 import SnakeBuilderSC
@@ -285,7 +287,7 @@ def get_varying_d_snakes(distance):
         ]
     elif distance == 9:
         # -------------------d=9-------------------------
-        m, n = 30, 30
+        m, n = 40, 40
         G = nx.grid_2d_graph(m, n)
         pos = {(x, y): (x, y) for x, y in G.nodes()}
 
@@ -305,7 +307,7 @@ def get_varying_d_snakes(distance):
     elif distance == 11:
         # -------------------d=11-------------------------
 
-        m, n = 30, 30
+        m, n = 40, 40
         G = nx.grid_2d_graph(m, n)
         pos = {(x, y): (x, y) for x, y in G.nodes()}
 
@@ -327,8 +329,6 @@ def get_varying_d_snakes(distance):
 
 
 def plot_file(filename):
-    # plotting
-    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()
 
@@ -336,11 +336,32 @@ def plot_file(filename):
         ax=ax,
         stats=sinter.stats_from_csv_files(f"./{filename}.csv"),
         x_func=lambda task: task.json_metadata["p"],
-        # y_func=lambda task: task.error_rate,
+        failure_units_per_shot_func=lambda stats: stats.json_metadata['rounds'],
         group_func=lambda task: task.json_metadata["len"],
     )
     # ax.set_xscale("log")
     ax.set_yscale("log")
     ax.legend()
-    ax.set_title(f"sc-test")
+    ax.set_title(f"{filename}")
     plt.show()
+
+def plot_projected_d(filename):
+
+    fig, ax = plt.subplots()
+
+    plot_custom(
+        ax=ax,
+        stats=sinter.stats_from_csv_files(f"./{filename}.csv"),
+        x_func=lambda task: task.json_metadata["len"],
+        y_func=lambda task: task.errors/task.shots,
+        filter_func=lambda task: task.json_metadata["p"] < 0.009,
+        group_func=lambda task: task.json_metadata["p"],
+    )
+    # ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.legend()
+    ax.set_title(f"X logical error rate per shot vs distance")
+    plt.show()
+
+if __name__ == '__main__':
+    plot_projected_d('naive=False-new-varying-lens')
