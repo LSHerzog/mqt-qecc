@@ -22,11 +22,11 @@ class SnakeBuilderSC:
     """Constructs a n-snake of distance d with a surface code in snake shape on the square lattice substate (leading to brickwall routing graph aka hex graph)."""
 
     def __init__(
-            self,
-            g: nx.Graph,
-            positions_rough: list[list[list[tuple[int, int]]]],
-            positions_smooth: list[list[list[tuple[int, int]]]],
-            d: int
+        self,
+        g: nx.Graph,
+        positions_rough: list[list[list[tuple[int, int]]]],
+        positions_smooth: list[list[list[tuple[int, int]]]],
+        d: int
     ) -> None:
         """Initializes a SC n-snake.
 
@@ -194,7 +194,7 @@ class SnakeBuilderSC:
                        x != 0) <= 1, "The star has overlaps with both rough boundaries, this cannot be."
             # horizontal rough remove: weigh3 star with 2 overlapping nodes on rough b
             if (sum(lst_on_rough) == 1 and len(
-                    star) == 2):  # (sum(lst_on_rough)==2 and len(star)==3) #the weight3 case is actually not necessary right
+                star) == 2):  # (sum(lst_on_rough)==2 and len(star)==3) #the weight3 case is actually not necessary right
                 pass
             else:
                 stars_new.append(star)
@@ -439,7 +439,7 @@ class SnakeBuilderSC:
                         "d": d
                     })
                 # top and right edge
-                elif b in face and ((min_x + 1, min_y - 1),(min_x + 1, min_y)) in face:
+                elif b in face and ((min_x + 1, min_y - 1), (min_x + 1, min_y)) in face:
                     #     2   b   3
                     #
                     #             c
@@ -537,31 +537,18 @@ class SnakeBuilderSC:
                                  after_clifford_depolarization,
                                  before_measure_flip_probability,
                                  after_reset_flip_probability,
+                                 naive=False
                                  ):
         z_check_schedule, data_qubit_positions = self.get_optimal_check_schedule()
-
+        _, hx, _ = self.gen_checks()
         pos_to_qubit = {}
         for key, val in self.trans_dict.items():
             pos_to_qubit[frozenset(key)] = val
 
-
         nr_data_qubits = len(list(pos_to_qubit.keys()))
         data_register_indices = np.arange(nr_data_qubits)
-        anc_register_indices = np.arange(nr_data_qubits, nr_data_qubits + len(z_check_schedule))
-        #print("nr_data_qubits", nr_data_qubits)
-        #print("data_register_indices", data_register_indices)
-        #print("anc_register_indices", anc_register_indices)
-        #print("z check schedule", len(z_check_schedule))
-        #pos_to_qubit = {}
-
-        #for idx, edge in enumerate(data_qubit_positions):
-        #    pos_to_qubit[edge] = idx
-
-
-
-        #print("lucas labels")
-        #for item in pos_to_qubit.items():
-        #    print(item)
+        z_anc_reg_indices = np.arange(nr_data_qubits, nr_data_qubits+len(z_check_schedule))
+        x_anc_register_indices = np.arange(nr_data_qubits + len(z_check_schedule), nr_data_qubits + len(z_check_schedule) + hx.shape[0])
 
         ### init block ###
         circuit = stim.Circuit()
@@ -570,64 +557,77 @@ class SnakeBuilderSC:
         circuit.append("TICK")
 
         # initialize Z check ancillas
-        circuit.append("RZ", anc_register_indices)
-        circuit.append("X_ERROR", anc_register_indices, after_reset_flip_probability)
+        circuit.append("RZ", z_anc_reg_indices)
+        circuit.append("X_ERROR", z_anc_reg_indices, after_reset_flip_probability)
         circuit.append("TICK")
 
-        schedule = ["b", "a", "c", "d"]
+        # initialize X check ancillas
+        circuit.append("RX", x_anc_register_indices)
+        circuit.append("Z_ERROR", x_anc_register_indices, after_reset_flip_probability)
+        circuit.append("TICK")
+
+        schedule = ["a", "d", "b", "c"]
 
         # iterate over steps in schedule and append all CX gates happening in this step
         # append 2 qubit dep noise after gate
-
-        #naive schedule
-        for face_idx, face in enumerate(self.plaquettes):
-            check_targets = []
-            for edge in face:
+        if naive:
+            # naive schedule
+            for face_idx, face in enumerate(self.plaquettes):
+                for edge in face:
+                    qubit = pos_to_qubit[frozenset(edge)]
+                    circuit.append("CX", [qubit, z_anc_reg_indices[face_idx]])
+                    circuit.append(
+                        "DEPOLARIZE2",
+                        [qubit, z_anc_reg_indices[face_idx]],
+                        after_clifford_depolarization,
+                    )
+                    circuit.append("TICK")
+        else:
+            # 'optimized' schedule
+            for round in schedule:
+                for face_idx, face_sched in enumerate(z_check_schedule):
+                    if round in face_sched:
+                        # if there is a CX scheduled in timestep 'round' of the face, apply gate
+                        qubit = pos_to_qubit[face_sched[round]]
+                        circuit.append("CX", [qubit, z_anc_reg_indices[face_idx]])
+                        circuit.append(
+                            "DEPOLARIZE2",
+                            [qubit, z_anc_reg_indices[face_idx]],
+                            after_clifford_depolarization,
+                        )
+                        circuit.append("TICK")
+        for star_idx, star in enumerate(self.stars):
+            for edge in star:
                 qubit = pos_to_qubit[frozenset(edge)]
-                check_targets.append(36+qubit-68)
-                circuit.append("CX", [qubit, anc_register_indices[face_idx]])
+                circuit.append("CZ", [qubit, x_anc_register_indices[star_idx]])
                 circuit.append(
                     "DEPOLARIZE2",
-                    [qubit, anc_register_indices[face_idx]],
+                    [qubit, x_anc_register_indices[star_idx]],
                     after_clifford_depolarization,
                 )
                 circuit.append("TICK")
-            print(f"check {-face_idx+68-18} qubits {check_targets}")
-
-        # optimized schedule
-        # for round in schedule:
-        #     for face_idx, face_sched in enumerate(z_check_schedule):
-        #         if round in face_sched:
-        #             # if there is a CX scheduled in timestep 'round' of the face, apply gate
-        #             qubit = pos_to_qubit[face_sched[round]]
-        #             circuit.append("CX", [qubit, anc_register_indices[face_idx]])
-        #             circuit.append(
-        #                 "DEPOLARIZE2",
-        #                 [qubit, anc_register_indices[face_idx]],
-        #                 after_clifford_depolarization,
-        #             )
-        #             circuit.append("TICK")
 
         # measure all ancillas
-        circuit.append("MRZ", anc_register_indices, before_measure_flip_probability)
+        circuit.append("MRZ", z_anc_reg_indices, before_measure_flip_probability)
+        circuit.append("MRX", x_anc_register_indices, before_measure_flip_probability)
+        return circuit, data_register_indices, z_anc_reg_indices, x_anc_register_indices
 
-        return circuit, data_register_indices, anc_register_indices
 
     def snake_memory_ckt(self, rounds,
-                         before_round_data_depolarization: float = 0.0,
-                         after_clifford_depolarization: float = 0.0,
-                         before_measure_flip_probability: float = 0.0,
-                         after_reset_flip_probability: float = 0.0) -> stim.Circuit:
-        se_ckt, data_reg_idxs, anc_reg_idxs = self._syndrome_extraction_ckt(
+                     before_round_data_depolarization: float = 0.0,
+                     after_clifford_depolarization: float = 0.0,
+                     before_measure_flip_probability: float = 0.0,
+                     after_reset_flip_probability: float = 0.0,
+                     naive=False) -> stim.Circuit:
+        se_ckt, data_reg_idxs, anc_reg_idxs, x_anc_register_indices = self._syndrome_extraction_ckt(
             before_round_data_depolarization=before_round_data_depolarization,
             after_clifford_depolarization=after_clifford_depolarization,
             before_measure_flip_probability=before_measure_flip_probability,
-            after_reset_flip_probability=after_reset_flip_probability, )
+            after_reset_flip_probability=after_reset_flip_probability, naive=naive)
         _, hz, _ = self.gen_checks()
-        m, n = hz.shape
-
-        #print("data_register_indices", data_reg_idxs)
-        #print("anc_register_indices", anc_reg_idxs)
+        nr_zchecks, n = hz.shape
+        nr_xchecks = len(x_anc_register_indices)
+        m = nr_zchecks + nr_xchecks
 
         circuit = stim.Circuit()
         ######### INIT BLOCK #########
@@ -640,9 +640,9 @@ class SnakeBuilderSC:
             # First round
             circuit += se_ckt
 
-            # detectors for first measurement round
+            # Z detectors for first measurement round
             # parameterized with coordinates (x,0), x \in {n,n+1,...,n+m} for first round
-            for idx in range(m):
+            for idx in range(nr_zchecks):
                 circuit.append(f"DETECTOR", [stim.target_rec(-m + idx)], (idx + n, 0))
 
             # repeat block
@@ -655,7 +655,7 @@ class SnakeBuilderSC:
                 syndrome_cycle.append("SHIFT_COORDS", [], [0, 1])
 
                 # Add detectors
-                for idx in range(m):
+                for idx in range(nr_zchecks):
                     # create detectors comparing measurement results between rounds
                     # e.g., measurement -2 * m + 0 = -2m and -m = -m+0
                     syndrome_cycle.append(
@@ -773,7 +773,7 @@ class SnakeBuilderSTDW:
         assert len(
             lst_corner) == 3, f"Something weird happened. lst_corner has {len(lst_corner)} elements instead of 3."
         assert len(lst_boundary) == (
-                    self.d - 2) * 3, f"Something weird happened. lst_boundary has {len(lst_boundary)} elements instead of {(self.d - 2) * 3}."
+            self.d - 2) * 3, f"Something weird happened. lst_boundary has {len(lst_boundary)} elements instead of {(self.d - 2) * 3}."
 
         return [lst_corner, lst_boundary]
 
@@ -872,7 +872,7 @@ class SnakeBuilderSTDW:
         # build in assertion regarding number of each stabilizers, i have equations to check whether the number is right.
         assert len(x_plaquettes) == self.n * self.p, "Your number of final x_plaquettes is wrong, maybe weird input?"
         assert len(z_plaquettes) == self.n * self.p + self.d * (
-                    self.n - 1), "Your number of final z_plaquettes is wrong, maybe weird input?"
+            self.n - 1), "Your number of final z_plaquettes is wrong, maybe weird input?"
 
         return z_plaquettes, x_plaquettes
 
@@ -1224,9 +1224,9 @@ class SnakeBuilder:
     """Constructs a snake with n Steane patches on specified vertices in G. Without ancillas in the interface."""
 
     def __init__(
-            self,
-            g: nx.Graph,
-            positions: list[dict]
+        self,
+        g: nx.Graph,
+        positions: list[dict]
     ) -> None:
         """Initializes n snake.
 
