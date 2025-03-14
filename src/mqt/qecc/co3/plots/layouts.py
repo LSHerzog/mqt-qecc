@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 import networkx as nx
 
 import mqt.qecc.co3 as co
@@ -486,3 +488,39 @@ def gen_layout(layout_type: str, num_qubits: int, factories: list) -> tuple[nx.G
         raise NotImplementedError
     
     return lat.G, data_qubit_locs, factory_ring 
+
+
+def remove_edge_per_factory(g: nx.Graph, factories: list[tuple[int,int]]) -> nx.Graph:
+    """Needed for folded surface code substrate.
+
+    Since in folded surface code substrate, the factories are considered to be patches of standard surface codes, 
+    one is allowed only to route to ONE boundary of the surface code patch which hosts the T state.
+    Therefore, the factory node is allowed to be connected with the remainder only with ONE edge.
+    We remove a random edge per factory, since we can just place the X boundary accordingly and we do not care about what happens outside
+
+    Maybe remove the node directly, because then, you can ensure that this spot is free for the magic state distillery
+
+    Args:
+        g (nx.Graph): _description_
+        factories (list[tuple[int,int]]): _description_
+    """
+    for factory in factories:
+        #find neighbors, make sure that there are 2
+        neighbors = list(g.neighbors(factory))
+        assert len(neighbors) == 2, "your factory has access to more than 2 neighboring nodes which is a little weird"
+        
+        #choose a random of those neighbors
+        node = random.choice(neighbors)
+
+        #remove the corresponding edge from g
+        #if (node, factory) in g.edges():
+        #    g.remove_edge(node,factory)
+        #elif (factory, node) in g.edges():
+        #    g.remove_edge(factory,node)
+        if (node, factory) in g.edges() or  (factory, node) in g.edges:
+            g.remove_node(node)
+        else:
+            msg = "Considered edge to remove not in graph."
+            raise ValueError(msg)
+
+    return g

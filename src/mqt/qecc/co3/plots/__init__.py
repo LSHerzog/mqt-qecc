@@ -10,7 +10,7 @@ from .evaluation import (
     plot_ratio_vs_t,
     plot_space_time,
 )
-from .layouts import gen_layout  # Import the function you want to expose
+from .layouts import gen_layout, remove_edge_per_factory
 
 __all__ = [
     "collect_data_space_time",
@@ -19,5 +19,6 @@ __all__ = [
     "plot_improvement_circuit_types",
     "plot_improvement_f_variation",
     "plot_ratio_vs_t",
-    "plot_space_time"
+    "plot_space_time",
+    "remove_edge_per_factory"
     ]  # Controls what gets imported when using 'from co3.plots import *'
