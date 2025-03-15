@@ -34,8 +34,9 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     instances_set = {"q", "t", "min_depth", "tgate", "ratio", "custom_layout", "factory_locs", "layout_type", "layout_name"}
     instances_set_ext = {"q", "t", "min_depth", "tgate", "ratio", "custom_layout", "factory_locs", "layout_type", "layout_name", "circuit_type"} #additional circuit_type
+    instances_set_ext2 = {"q", "t", "min_depth", "tgate", "ratio", "custom_layout", "factory_locs", "layout_type", "layout_name", "graphtype", "circuit_type"}
     for instance in instances:
-        assert set(instance.keys()) == instances_set or set(instance.keys()) == instances_set_ext, "Wrong input for `instances`."
+        assert set(instance.keys()) == instances_set or set(instance.keys()) == instances_set_ext or set(instance.keys()) == instances_set_ext2, "Wrong input for `instances`."
     #if no "circuit type" given, choose standard
     for i, instance in enumerate(instances):
         if "circuit_type" not in set(instance.keys()):
@@ -167,7 +168,8 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
                 routing
             )
             #hard coded for now
-            prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
+            #prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
+            prefix = "/home/herzog/color_code_compilation/mqt-qecc-new-250313/mqt-qecc/src/mqt/qecc/co3/plots/results"
             suffix = "test_250218"
             _, _, best_rep, score_history = hc.run(prefix, suffix, parallel, processes)
 
@@ -231,7 +233,8 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
                     routing
                 )
                 #hard coded for now
-                prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
+                #prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
+                prefix = "/home/herzog/color_code_compilation/mqt-qecc-new-250313/mqt-qecc/src/mqt/qecc/co3/plots/results"
                 suffix = "test_250218_2"
                 _, _, best_rep, score_history = hc.run(prefix, suffix, parallel, processes)
 
@@ -515,6 +518,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     plt.show()
     plt.clf()
 
+    """
     #--------plot improvements in 3d---------------
     X, Y = np.meshgrid(list(available_t_dct.values()), list(available_f_dct.values()))
 
@@ -539,6 +543,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     plt.savefig(file_path)
 
     plt.clf()
+    """
 
     #---------plot abs layers-------------
     plt.figure(figsize=size)
@@ -575,6 +580,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     plt.clf()
 
+    """
     #------plot absolute layers in 3d---------
 
     X, Y = np.meshgrid(list(available_t_dct.values()), list(available_f_dct.values()))
@@ -598,6 +604,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     file_path = Path(path) / f"f_vs_t_abslayers_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
+    """
 
     
 
