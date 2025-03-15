@@ -169,7 +169,7 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
             )
             #hard coded for now
             #prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
-            prefix = "/home/herzog/color_code_compilation/mqt-qecc-new-250313/mqt-qecc/src/mqt/qecc/co3/plots/results"
+            prefix = "./results"
             suffix = "test_250218"
             _, _, best_rep, score_history = hc.run(prefix, suffix, parallel, processes)
 
@@ -234,7 +234,7 @@ def collect_data_space_time(instances: list[dict], hc_params: dict, reps: int, p
                 )
                 #hard coded for now
                 #prefix = "/mnt/c/Users/Laura/Documents/color_code_compilation/nbs-mqt-qecc/misc/"
-                prefix = "/home/herzog/color_code_compilation/mqt-qecc-new-250313/mqt-qecc/src/mqt/qecc/co3/plots/results"
+                prefix = "./results"
                 suffix = "test_250218_2"
                 _, _, best_rep, score_history = hc.run(prefix, suffix, parallel, processes)
 

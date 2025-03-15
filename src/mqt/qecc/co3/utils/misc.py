@@ -13,6 +13,8 @@ from qiskit_aer import AerSimulator
 
 import mqt.qecc.co3 as co
 
+random.seed(42)
+
 
 def generate_max_parallel_circuit(q: int, min_depth: int) -> list[tuple[int, int]]:
     """Circuits with maximally parallelizable layers, i.e. per layer, ALL qubits are used in disjoint gates.
