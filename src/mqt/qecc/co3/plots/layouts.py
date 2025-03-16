@@ -8,6 +8,8 @@ import networkx as nx
 
 import mqt.qecc.co3 as co
 
+random.seed(42)
+
 
 def filter_factory_nodes(g: nx.Graph, factory_ring: list[tuple[int,int]], factories: list[tuple[int,int]]) -> tuple[nx.Graph, set, set]:
     """Filter ancillas from factory_ring which should be kept in the graph considering the included factories.

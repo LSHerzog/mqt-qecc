@@ -416,7 +416,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     plt.savefig(file_path)
     plt.show()
 
-def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_depth:int, path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
+def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_depth:int, graphtype:str, hc_params:dict, path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
     """Plots a Matrix Plot with variation in number of factories and t. Also plots std.
 
     Args:
@@ -430,7 +430,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     """
     #extract data and put into matrix
     instances = res_lst[0]["instances"] #index does not matter because accidentally stored redundantely.
-    hc_params = res_lst[0]["hc_params"]
+    #hc_params = res_lst[0]["hc_params"]
 
     #cut off instances at length of res_lst
     instances = instances[:len(res_lst)] #just in case there where more instacnes included but the run stopped earlier
@@ -512,7 +512,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
-    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
+    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_2503011.pdf"
     plt.savefig(file_path)
 
     plt.show()
@@ -573,7 +573,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
-    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
+    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_2503011.pdf"
     plt.savefig(file_path)
 
     plt.show()

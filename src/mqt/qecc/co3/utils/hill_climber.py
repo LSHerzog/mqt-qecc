@@ -22,6 +22,8 @@ from .lattice_router import (
 )
 from .misc import translate_layout_circuit
 
+random.seed(42)
+
 
 def save_to_file(path: str, data: dict) -> None:
     """Safely saves data to a file."""
@@ -310,6 +312,10 @@ class HillClimbing:
         Returns:
             Tuple of (restart index, best solution, best score, history for this restart)
         """
+        base_seed = 42  # You can change this to any fixed value
+        seed = base_seed + restart
+        random.seed(seed)
+
         current_solution = self.gen_random_qubit_assignment()
         current_score = self.evaluate_solution(current_solution)
         history_temp = {"scores": [], "layout_init": current_solution.copy()}
@@ -375,6 +381,10 @@ class HillClimbing:
 
         else: #sequential 
             for restart in tqdm(range(self.max_restarts), desc="Hill Climbing Restarts..."):
+                base_seed = 42  # You can change this to any fixed value
+                seed = base_seed + restart
+                random.seed(seed)
+                
                 current_solution = self.gen_random_qubit_assignment()
                 current_score = self.evaluate_solution(current_solution)
                 history_temp = {"scores" : [], "layout_init" : current_solution.copy()}
