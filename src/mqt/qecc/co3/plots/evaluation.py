@@ -412,7 +412,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
     file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24_240308.pdf"
-
+    plt.tight_layout()
     plt.savefig(file_path)
     plt.show()
 
@@ -512,6 +512,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
+    plt.tight_layout()
     file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_2503011.pdf"
     plt.savefig(file_path)
 
@@ -539,6 +540,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     ax.legend()
     plt.show()
 
+    plt.tight_layout()
     file_path = Path(path) / f"f_vs_t_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
 
@@ -573,6 +575,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
+    plt.tight_layout()
     file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_2503011.pdf"
     plt.savefig(file_path)
 
@@ -602,6 +605,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     ax.legend()
     plt.show()
 
+    plt.tight_layout()
     file_path = Path(path) / f"f_vs_t_abslayers_3d_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_2503011.pdf"
     plt.savefig(file_path)
     """
@@ -698,6 +702,7 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
+    plt.tight_layout()
     file_path = Path(path) / f"ratio_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_numfac{num_factories}_layout{layout_name}_depth{min_depth}.pdf"
     plt.savefig(file_path)
 
@@ -729,6 +734,7 @@ def plot_ratio_vs_t(res_lst: list[dict], q:int, num_factories:int, layout_name:s
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
 
+    plt.tight_layout()
     file_path = Path(path) / f"ratio_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_numfac{num_factories}_layout{layout_name}_depth{min_depth}.pdf"
     plt.savefig(file_path)
 
@@ -831,6 +837,7 @@ def plot_space_time(instances: list[dict], hc_params: dict, res_lst: list[dict],
     max_iterations = hc_params["max_iterations"]
     file_path = Path(path) / f"space_time_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_250308_new.pdf"
 
+    plt.tight_layout()
     plt.savefig(file_path)
     plt.show()
 
@@ -981,5 +988,6 @@ def plot_improvement_f_variation(res_lst_crossing: list[dict], res_lst_routing: 
     assert max_restarts_c == max_restarts_r
     assert len(instances_crossing) == len(instances_routing)
     filepath = Path(path) / f"f_variation_t{t}_restarts{max_restarts_c}_it{max_iterations_c}_numinstances{len(instances_routing)}_q{q}_ratio{ratio}_depth{min_depth}.pdf"
+    plt.tight_layout()
     plt.savefig(filepath)
     plt.show()
