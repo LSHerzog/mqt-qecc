@@ -874,6 +874,14 @@ class SnakeBuilderSTDW:
         assert len(z_plaquettes) == self.n * self.p + self.d * (
                     self.n - 1), "Your number of final z_plaquettes is wrong, maybe weird input?"
 
+        unique_tuples = set()
+        for item in z_plaquettes + x_plaquettes:
+            unique_tuples.update(item)
+        assert self.q_tilde == len(list(unique_tuples)), "Q tilde is not the same number as the qubit support of the stabilizers. something is odd"
+
+        #check whether only 1 qubit is encoded
+        assert self.q_tilde - (len(z_plaquettes) + len(x_plaquettes)) == 1, "The snake does not encode one logical qubit!!!!"
+
         return z_plaquettes, x_plaquettes
 
     def find_separate_stabilizers(self, n_triangle: int) -> list:
