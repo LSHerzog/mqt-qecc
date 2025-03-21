@@ -411,7 +411,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     metric = hc_params["metric"]
     max_restarts = hc_params["max_restarts"]
     max_iterations = hc_params["max_iterations"]
-    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24_240308.pdf"
+    file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24_240321.pdf"
     plt.tight_layout()
     plt.savefig(file_path)
     plt.show()

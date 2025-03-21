@@ -489,6 +489,14 @@ def gen_layout(layout_type: str, num_qubits: int, factories: list) -> tuple[nx.G
     else:
         raise NotImplementedError
     
+    #need to remove nodes between directly neighboring logical patches. a path between two directly neighboring edges would be wrong, because one cannot use an ancilla in between
+    for data_qubit in data_qubit_locs:
+        neighbours = list(g.neighbors(data_qubit))
+        for n in neighbours:
+            if n in data_qubit_locs: #if a neighbor is also a logical qubit
+                g.remove_edges_from([(data_qubit,n), (n, data_qubit)])
+    lat.G = g
+    
     return lat.G, data_qubit_locs, factory_ring 
 
 

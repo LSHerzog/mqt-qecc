@@ -51,6 +51,9 @@ class HillClimbing:
         ) -> None:
         """Initializes the Hill Climbing with Random Restarts algorithm.
 
+        IMPORTANT: ALWAYS USE CUSTOM LAYOUTS TO MAKE SURE THAT THE CONNECTIVITY IS CORRECT AND REPRESENTS CC CORRECTLY 
+        (e.g. you have to remove edges between directly neighboring logical nodes, because a path between those would not allow to put a ancilla for LS)
+
         Args:
             max_restarts (int): Maximum number of random restarts.
             max_iterations (int): Maximum number of iterations per restart.
