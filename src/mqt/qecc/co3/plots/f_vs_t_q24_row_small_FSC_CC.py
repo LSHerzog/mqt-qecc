@@ -8,7 +8,7 @@ import mqt.qecc.co3 as co
 import pickle
 from pathlib import Path
 
-path = "./results/f_vs_time_q24_ratio08_small_row_FSC_b"
+path = "./results/f_vs_time_q24_ratio08_small_row_250321_2_8_f_t"
 
 #ROW
 factories_q24_row = [(0,3), (0,9), (0,15), (6,6), (6,12), (6,18), (5,3), (2,2)]
@@ -19,14 +19,14 @@ custom_layout_q24_row_f8_CC = [data_qubit_locs, g.copy()]
 g = co.plots.remove_edge_per_factory(g, factories_q24_row)
 custom_layout_q24_row_f8_FSC = [data_qubit_locs, g]
 
-g, data_qubit_locs, factory_ring = co.plots.gen_layout("row", 24, factories_q24_row[:4])
+g, data_qubit_locs, factory_ring = co.plots.gen_layout("row", 24, factories_q24_row[:2])
 custom_layout_q24_row_f4_CC = [data_qubit_locs, g.copy()]
-g = co.plots.remove_edge_per_factory(g, factories_q24_row[:4])
+g = co.plots.remove_edge_per_factory(g, factories_q24_row[:2])
 custom_layout_q24_row_f4_FSC = [data_qubit_locs, g]
 
 hc_params = {
     "metric" : "crossing",
-    "max_restarts": 30, 
+    "max_restarts": 10, 
     "max_iterations": 50,
     "routing" : "dynamic",
     "optimize_factories": False, #True, #want to count in factory crossings as well
@@ -38,21 +38,21 @@ hc_params = {
 instances = [
     #FSC GRAPH  run fsc with removed graph edges first to ensure that the chosen circutis really work. i encountered 1 case when the crossing metric could not be computed but could not reprodcue it
     #f=8
-    {"q": 24, "t": 4, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_FSC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
-    {"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_FSC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
+    #{"q": 24, "t": 4, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_FSC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
+    #{"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_FSC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
 
     #f=4
-    {"q": 24, "t": 4, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_FSC, "factory_locs" : factories_q24_row[:4], "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
-    {"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_FSC, "factory_locs" : factories_q24_row[:4], "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
+    #{"q": 24, "t": 4, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_FSC, "factory_locs" : factories_q24_row[:4], "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
+    #{"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_FSC, "factory_locs" : factories_q24_row[:4], "layout_type" : "custom", "layout_name": "row", "graphtype": "FSC", "circuit_type": "random"},
 
     #CC GRAPH
     #f=8
-    {"q": 24, "t": 4, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_CC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
+    {"q": 24, "t": 2, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_CC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
     {"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f8_CC, "factory_locs" : factories_q24_row, "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
 
     #f=4
-    {"q": 24, "t": 4, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_CC, "factory_locs" : factories_q24_row[:4], "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
-    {"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_CC, "factory_locs" : factories_q24_row[:4], "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
+    {"q": 24, "t": 2, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_CC, "factory_locs" : factories_q24_row[:2], "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
+    {"q": 24, "t": 8, "min_depth": 24*4, "tgate": True, "ratio": 0.8, "custom_layout": custom_layout_q24_row_f4_CC, "factory_locs" : factories_q24_row[:2], "layout_type" : "custom", "layout_name": "row", "graphtype": "CC", "circuit_type": "random"},
 
 ]
 
@@ -73,7 +73,7 @@ with Path(path).open("rb") as f:
 with Path(path).open("rb") as f:
     res_lst = pickle.load(f)
 
-path = "./results/f_vs_time_q24_ratio08_small_row_FSC_b_metricrouting"
+path = "./results/f_vs_time_q24_ratio08_small_row_250321_2_8_f_t_metricrouting"
 
 with Path(path).open("rb") as f:
     res_lst_routing = pickle.load(f)

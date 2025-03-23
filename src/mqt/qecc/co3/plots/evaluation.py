@@ -308,6 +308,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
             improvements = []
             for ni, nf in zip(num_init_lst, num_final_lst):
                 improvements.append((ni-nf)/ni)
+            print("len improvments", len(improvements))
             mean_improvement = np.mean(improvements)
             std_imrovement = np.std(improvements)
             dct_mat.append({"i": i,"mean_final_layers": np.mean(num_final_lst),"std_final_layers":np.std(num_final_lst), "mean_improvement": mean_improvement, "std_improvement": std_imrovement, "t": instance["t"], "factory_locs": instance["factory_locs"], "q": instance["q"], "circuit_type": instance["circuit_type"], "layout_name": instance["layout_name"], "min_depth":instance["min_depth"]})
@@ -401,7 +402,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     ax.set_xticks(range(len(sorted_circuit_types)))
     ax.set_xticklabels(sorted_circuit_types, rotation=45) 
 
-    ax.set_ylabel("Mean improvement $(n_i-n_f)/n_i$")
+    ax.set_ylabel(r"$\tilde{\Delta}$")#("Mean improvement $(n_i-n_f)/n_i$")
     ax.set_xlabel("Random Circuit type")
 
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7) 
@@ -413,7 +414,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     max_iterations = hc_params["max_iterations"]
     file_path = Path(path) / f"circuit_types_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24_240321.pdf"
     plt.tight_layout()
-    plt.savefig(file_path)
+    plt.savefig(file_path, bbox_inches="tight", pad_inches=0.1)
     plt.show()
 
 def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_depth:int, graphtype:str, hc_params:dict, path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
@@ -503,7 +504,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     # Add colorbar
     cbar = plt.colorbar(im)
-    cbar.set_label("Mean Improvement $(n_i-n_f)/n_i$")  # Label for the colorbar
+    cbar.set_label(r"$\tilde{\Delta}$")#("Mean Improvement $(n_i-n_f)/n_i$")  # Label for the colorbar
 
     plt.xlabel("Reset time $t$")
     plt.ylabel("Number of factories")
@@ -513,8 +514,8 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_iterations = hc_params["max_iterations"]
 
     plt.tight_layout()
-    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_2503011.pdf"
-    plt.savefig(file_path)
+    file_path = Path(path) / f"f_vs_t_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_250321.pdf"
+    plt.savefig(file_path, bbox_inches='tight', pad_inches=0.1)
 
     plt.show()
     plt.clf()
@@ -566,7 +567,7 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
 
     # Add colorbar
     cbar = plt.colorbar(im)
-    cbar.set_label("Number of Layers")  # Label for the colorbar
+    cbar.set_label(r"$\Delta_f$")#("Number of Layers")  # Label for the colorbar
 
     plt.xlabel("Reset time $t$")
     plt.ylabel("Number of factories")
@@ -576,8 +577,8 @@ def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_de
     max_iterations = hc_params["max_iterations"]
 
     plt.tight_layout()
-    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_2503011.pdf"
-    plt.savefig(file_path)
+    file_path = Path(path) / f"f_vs_t_abslayers_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_250321.pdf"
+    plt.savefig(file_path, bbox_inches='tight', pad_inches=0.1)
 
     plt.show()
 
@@ -990,4 +991,119 @@ def plot_improvement_f_variation(res_lst_crossing: list[dict], res_lst_routing: 
     filepath = Path(path) / f"f_variation_t{t}_restarts{max_restarts_c}_it{max_iterations_c}_numinstances{len(instances_routing)}_q{q}_ratio{ratio}_depth{min_depth}.pdf"
     plt.tight_layout()
     plt.savefig(filepath)
+    plt.show()
+
+
+def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, ratio: float, layout_name: str, min_depth: int, graphtype: str, hc_params: dict, path: str = "./results", size: tuple[int, int] = (5, 5)) -> None:
+    """Plots a Matrix Plot with variation in number of factories and t for two result lists in subplots."""
+
+    def process_res_list(res_lst):
+        instances = res_lst[0]["instances"][:len(res_lst)]
+        idx_include = [i for i, instance in enumerate(instances) if instance["q"] == q and instance["ratio"] == ratio and instance["layout_name"] == layout_name and instance["min_depth"] == min_depth]
+        dct_mat = []
+
+        for i in idx_include:
+            res = res_lst[i]
+            num_init_lst = res["num_init_lst"]
+            num_final_lst = res["num_final_lst"]
+            improvements = [(ni - nf) / ni for ni, nf in zip(num_init_lst, num_final_lst)]
+            dct_mat.append({
+                "mean_final_layers": np.mean(num_final_lst),
+                "std_final_layers": np.std(num_final_lst),
+                "mean_improvement": np.mean(improvements),
+                "std_improvement": np.std(improvements),
+                "t": instances[i]["t"],
+                "factory_locs": instances[i]["factory_locs"]
+            })
+
+        available_t = sorted(set(el["t"] for el in dct_mat))
+        available_f = sorted(set(len(el["factory_locs"]) for el in dct_mat))
+        available_t_dct = {t: i for i, t in enumerate(available_t)}
+        available_f_dct = {f: i for i, f in enumerate(available_f)}
+
+        data = np.zeros((len(available_f), len(available_t)))
+        data_std = np.zeros((len(available_f), len(available_t)))
+        data_abs = np.zeros((len(available_f), len(available_t)))
+        data_abs_std = np.zeros((len(available_f), len(available_t)))
+
+        for el in dct_mat:
+            f_idx = available_f_dct[len(el["factory_locs"])]
+            t_idx = available_t_dct[el["t"]]
+            data[f_idx, t_idx] = el["mean_improvement"]
+            data_std[f_idx, t_idx] = el["std_improvement"]
+            data_abs[f_idx, t_idx] = el["mean_final_layers"]
+            data_abs_std[f_idx, t_idx] = el["std_final_layers"]
+
+        return data, data_std, data_abs, data_abs_std, available_t, available_f, available_t_dct, available_f_dct
+
+    data1, data_std1, data_abs1, data_abs_std1, available_t1, available_f1, available_t_dct, available_f_dct = process_res_list(res_lst1)
+    data2, data_std2, data_abs2, data_abs_std2, available_t2, available_f2, _, _ = process_res_list(res_lst2)
+
+    fig, axes = plt.subplots(2, 2, figsize=size, gridspec_kw={'width_ratios': [1, 1], 'height_ratios': [1, 1]})
+
+    def plot_with_text(ax, data, data_std):
+        im = ax.imshow(data, cmap="plasma", aspect="auto")
+        for i in range(data.shape[0]):
+            for j in range(data.shape[1]):
+                ax.text(j, i, str(round(data[i, j], 3)), ha="center", va="center", color="white", fontsize=10,
+                        path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+                ax.text(j, i + 0.2, "std=" + str(round(data_std[i, j], 3)), ha="center", va="center", color="white", fontsize=10,
+                        path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+        ax.set_xticks(list(available_t_dct.values()))
+        ax.set_xticklabels(list(available_t_dct.keys()), rotation=45)
+        ax.set_yticks(list(available_f_dct.values()))
+        ax.set_yticklabels(list(available_f_dct.keys()))
+        return im
+
+    # Global color limits
+    vmin1, vmax1 = min(data1.min(), data2.min()), max(data1.max(), data2.max())
+    vmin2, vmax2 = min(data_abs1.min(), data_abs2.min()), max(data_abs1.max(), data_abs2.max())
+
+    # Plot data with consistent color limits
+    im1 = plot_with_text(axes[0, 0], data1, data_std1)
+    im2 = plot_with_text(axes[0, 1], data2, data_std2)
+    im3 = plot_with_text(axes[1, 0], data_abs1, data_abs_std1)
+    im4 = plot_with_text(axes[1, 1], data_abs2, data_abs_std2)
+
+    # Apply the same color limits to ensure consistent colors across the plots
+    im1.set_clim(vmin1, vmax1)
+    im2.set_clim(vmin1, vmax1)
+    im3.set_clim(vmin2, vmax2)
+    im4.set_clim(vmin2, vmax2)
+
+    # Add colorbars outside the plot using the `pad` parameter
+    cbar_ax1 = fig.add_axes([0.92, 0.65, 0.02, 0.3])  # Position for the first colorbar
+    cbar_ax2 = fig.add_axes([0.92, 0.15, 0.02, 0.3])  # Position for the second colorbar
+
+    # Add colorbars and set the labels directly
+    cbar1 = fig.colorbar(im1, cax=cbar_ax1, orientation='vertical')
+    cbar1.set_label(r'$\tilde{\Delta}$')
+
+    cbar2 = fig.colorbar(im3, cax=cbar_ax2, orientation='vertical')
+    cbar2.set_label(r'$\Delta_f$')
+
+    # Set axis labels for all subplots
+    axes[0, 0].set_xlabel('Reset time $t$')
+    axes[0, 0].set_ylabel('Number of factories')
+
+    axes[0, 1].set_xlabel('Reset time $t$')
+    axes[0, 1].set_ylabel('Number of factories')
+
+    axes[1, 0].set_xlabel('Reset time $t$')
+    axes[1, 0].set_ylabel('Number of factories')
+
+    axes[1, 1].set_xlabel('Reset time $t$')
+    axes[1, 1].set_ylabel('Number of factories')
+
+    # Adjust layout to give room for colorbars
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+
+    # Save the figure to the specified file path
+    instances = res_lst1[0]["instances"]
+    max_restarts = hc_params["max_restarts"]
+    max_iterations = hc_params["max_iterations"]
+    file_path = Path(path) / f"f_vs_t_ALL_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q{q}_ratio{ratio}_layout{layout_name}_depth{min_depth}_graphtype{graphtype}_250321.pdf"
+    plt.savefig(file_path, bbox_inches='tight', pad_inches=0.1)
+
+    # Show the plot
     plt.show()

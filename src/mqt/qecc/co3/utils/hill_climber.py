@@ -22,7 +22,7 @@ from .lattice_router import (
 )
 from .misc import translate_layout_circuit
 
-random.seed(42)
+random.seed(45)
 
 
 def save_to_file(path: str, data: dict) -> None:
@@ -315,7 +315,7 @@ class HillClimbing:
         Returns:
             Tuple of (restart index, best solution, best score, history for this restart)
         """
-        base_seed = 42  # You can change this to any fixed value
+        base_seed = 45  # You can change this to any fixed value
         seed = base_seed + restart
         random.seed(seed)
 
@@ -384,7 +384,7 @@ class HillClimbing:
 
         else: #sequential 
             for restart in tqdm(range(self.max_restarts), desc="Hill Climbing Restarts..."):
-                base_seed = 42  # You can change this to any fixed value
+                base_seed = 45  # You can change this to any fixed value
                 seed = base_seed + restart
                 random.seed(seed)
                 

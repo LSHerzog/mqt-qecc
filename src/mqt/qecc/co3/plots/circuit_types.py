@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+#This notebook must be run from the directory /mqt-qecc/src/mqt/qecc/co3/plots
+
 import mqt.qecc.co3 as co
 
 plt.rcParams["font.family"] = "Times New Roman"
@@ -8,7 +10,7 @@ plt.rcParams["font.family"] = "Times New Roman"
 import pickle
 from pathlib import Path
 
-path = "./results/circuit_types_q24"
+path = "./results/circuit_types_q24_250321_c"
 
 #HEX
 
@@ -46,7 +48,7 @@ custom_layout_q60_pair_f8 = [data_qubit_locs, g]
 
 hc_params = {
     "metric" : "crossing",
-    "max_restarts": 30,
+    "max_restarts": 10,
     "max_iterations": 50,
     "routing" : "dynamic",
     "optimize_factories": False,
@@ -95,7 +97,7 @@ instances = [
 ]
 
 
-reps = 30
+reps = 5
 both_metric = False
 res_lst = co.plots.collect_data_space_time(instances, hc_params, reps, path, both_metric)
 

@@ -9,6 +9,7 @@ from .evaluation import (
     plot_improvement_f_variation,
     plot_ratio_vs_t,
     plot_space_time,
+    plot_f_vs_t_subfigs,
 )
 from .layouts import gen_layout, remove_edge_per_factory
 
@@ -20,5 +21,6 @@ __all__ = [
     "plot_improvement_f_variation",
     "plot_ratio_vs_t",
     "plot_space_time",
-    "remove_edge_per_factory"
+    "remove_edge_per_factory",
+    "plot_f_vs_t_subfigs"
     ]  # Controls what gets imported when using 'from co3.plots import *'
