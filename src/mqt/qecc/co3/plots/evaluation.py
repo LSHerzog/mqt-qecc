@@ -324,6 +324,7 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     circuit_types_ordered = ["sequential", "random", "parallelmax"]
     sorted_circuit_types = [el for el in circuit_types_ordered if el in unique_circuit_types]
     dct_plot = {}
+    dct_plot_abs = {}
 
     for layout_name, q in itertools.product(unique_layout_names, unique_q):
         key = (layout_name, q)
@@ -331,13 +332,18 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
         #key = (layout_name, min_depth)
         lst_improvement = []
         lst_std = []
+        lst_abslayers = []
+        lst_std_abslayers = []
         for ckt_i in range(len(sorted_circuit_types)):
             for el in dct_mat:
                 if el["q"] == q and el["layout_name"] == layout_name and el["circuit_type"] == sorted_circuit_types[ckt_i]:
                 #if el["min_depth"] == min_depth and el["layout_name"] == layout_name and el["circuit_type"] == sorted_circuit_types[ckt_i]:
                     lst_improvement.append(el["mean_improvement"])
                     lst_std.append(el["std_improvement"])
+                    lst_abslayers.append(el["mean_final_layers"])
+                    lst_std_abslayers.append(el["std_final_layers"])
         dct_plot.update({key: [lst_improvement, lst_std]})   
+        dct_plot_abs.update({key: [lst_abslayers, lst_std_abslayers]})
 
     for el,val in dct_plot.items():
         print(el, val)                        
@@ -394,7 +400,10 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
         bbox_to_anchor=(0.5, 1.4),  # Moves the legend above the plot, adapt this for other plots
         fontsize=10, 
         ncol=3,  # Adjust the number of columns as needed
-        fancybox = False
+        fancybox = False,
+        borderpad=0.2,
+        handletextpad=0.2,  # Reduce space between legend markers and text
+        columnspacing=0.5
     )
     legend.get_frame().set_linewidth(0.8)
     legend.get_frame().set_edgecolor("black")
@@ -416,6 +425,54 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     plt.tight_layout()
     plt.savefig(file_path, bbox_inches="tight", pad_inches=0.1)
     plt.show()
+
+    plt.clf()
+    #--------abs plot----------
+    _, ax = plt.subplots(figsize=size)
+    legend_handles = {}
+    for key, val in dct_plot_abs.items():
+        label = key[0]+str(key[1])
+        lst_improvement = val[0] #actually abslayer lst but too lazy to rename
+        lst_std = val[1]
+        style = layout_styles[label]
+        ax.errorbar(range(len(sorted_circuit_types)), lst_improvement, yerr=lst_std, color=style["color"], fmt=style["marker"], linestyle=style["linestyle"])
+        # Add label only once per layout type
+        legend_handles[label] = Line2D(
+            [0], [0], color=style["color"], marker=style["marker"], linestyle="None", label=style["label"]
+        )
+
+    # Add unique legend entries
+    legend = ax.legend(
+        handles=list(legend_handles.values()), 
+        loc="upper center", 
+        bbox_to_anchor=(0.5, 1.4),  # Moves the legend above the plot, adapt this for other plots
+        fontsize=10, 
+        ncol=3,  # Adjust the number of columns as needed
+        fancybox = False,
+        borderpad=0.2,
+        handletextpad=0.2,  # Reduce space between legend markers and text
+        columnspacing=0.5
+    )
+    legend.get_frame().set_linewidth(0.8)
+    legend.get_frame().set_edgecolor("black")
+
+    ax.set_xticks(range(len(sorted_circuit_types)))
+    ax.set_xticklabels(sorted_circuit_types, rotation=45) 
+
+    ax.set_ylabel(r"$\Delta_f$")#("Mean improvement $(n_i-n_f)/n_i$")
+    ax.set_xlabel("Random Circuit type")
+
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7) 
+    plt.tight_layout()
+
+    # Create the filename based on hyperparameters
+    metric = hc_params["metric"]
+    max_restarts = hc_params["max_restarts"]
+    max_iterations = hc_params["max_iterations"]
+    file_path = Path(path) / f"circuit_types_abslayer_metric{metric}_restarts{max_restarts}_it{max_iterations}_numinstances{len(instances)}_q24_240321.pdf"
+    plt.tight_layout()
+    plt.savefig(file_path, bbox_inches="tight", pad_inches=0.1)
+
 
 def plot_f_vs_t(res_lst: list[dict], q:int, ratio:float, layout_name:str, min_depth:int, graphtype:str, hc_params:dict, path: str = "./results", size: tuple[int,int] = (5,4)) -> None:
     """Plots a Matrix Plot with variation in number of factories and t. Also plots std.
