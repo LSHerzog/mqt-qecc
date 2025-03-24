@@ -8,7 +8,7 @@ import mqt.qecc.co3 as co
 import pickle
 from pathlib import Path
 
-path = "./results/f_vs_time_q24_ratio08_small_row_250321_2_8_f_t"
+path = "./results/f_vs_time_q24_ratio08_small_row_250321_2_8_f_t_B"
 
 #ROW
 factories_q24_row = [(0,3), (0,9), (0,15), (6,6), (6,12), (6,18), (5,3), (2,2)]
@@ -57,7 +57,7 @@ instances = [
 ]
 
 
-reps = 10
+reps = 50
 both_metric = True
 
 
@@ -73,7 +73,7 @@ with Path(path).open("rb") as f:
 with Path(path).open("rb") as f:
     res_lst = pickle.load(f)
 
-path = "./results/f_vs_time_q24_ratio08_small_row_250321_2_8_f_t_metricrouting"
+path = "./results/f_vs_time_q24_ratio08_small_row_250321_2_8_f_t_B_metricrouting"
 
 with Path(path).open("rb") as f:
     res_lst_routing = pickle.load(f)

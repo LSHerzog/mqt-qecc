@@ -1102,9 +1102,9 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
         im = ax.imshow(data, cmap="plasma", aspect="auto")
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                ax.text(j, i, str(round(data[i, j], 3)), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i, str(round(data[i, j], 2)), ha="center", va="center", color="white", fontsize=10,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
-                ax.text(j, i + 0.2, "std=" + str(round(data_std[i, j], 3)), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i + 0.2, "std=" + str(round(data_std[i, j], 2)), ha="center", va="center", color="white", fontsize=10,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
         ax.set_xticks(list(available_t_dct.values()))
         ax.set_xticklabels(list(available_t_dct.keys()), rotation=45)
