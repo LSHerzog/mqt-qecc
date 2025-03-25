@@ -1098,13 +1098,28 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
 
     fig, axes = plt.subplots(2, 2, figsize=size, gridspec_kw={'width_ratios': [1, 1], 'height_ratios': [1, 1]})
 
-    def plot_with_text(ax, data, data_std):
-        im = ax.imshow(data, cmap="plasma", aspect="auto")
+    def plot_with_text(ax, data, data_std, r):
+        im = ax.imshow(data, cmap="viridis", aspect="auto")
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                ax.text(j, i, str(round(data[i, j], 2)), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i, str(round(data[i, j], r)), ha="center", va="center", color="white", fontsize=10,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
-                ax.text(j, i + 0.2, "std=" + str(round(data_std[i, j], 2)), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i + 0.2, "$\pm$" + str(round(data_std[i, j], r)), ha="center", va="center", color="white", fontsize=10,
+                        path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+        ax.set_xticks(list(available_t_dct.values()))
+        ax.set_xticklabels(list(available_t_dct.keys()), rotation=45)
+        ax.set_yticks(list(available_f_dct.values()))
+        ax.set_yticklabels(list(available_f_dct.keys()))
+        return im
+    
+    def plot_with_text_int(ax, data, data_std):
+        im = ax.imshow(data, cmap="viridis", aspect="auto")
+        r=0
+        for i in range(data.shape[0]):
+            for j in range(data.shape[1]):
+                ax.text(j, i, str(int(round(data[i, j], r))), ha="center", va="center", color="white", fontsize=10,
+                        path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
+                ax.text(j, i + 0.2, "$\pm$" + str(int(round(data_std[i, j], r))), ha="center", va="center", color="white", fontsize=10,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
         ax.set_xticks(list(available_t_dct.values()))
         ax.set_xticklabels(list(available_t_dct.keys()), rotation=45)
@@ -1117,10 +1132,11 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
     vmin2, vmax2 = min(data_abs1.min(), data_abs2.min()), max(data_abs1.max(), data_abs2.max())
 
     # Plot data with consistent color limits
-    im1 = plot_with_text(axes[0, 0], data1, data_std1)
-    im2 = plot_with_text(axes[0, 1], data2, data_std2)
-    im3 = plot_with_text(axes[1, 0], data_abs1, data_abs_std1)
-    im4 = plot_with_text(axes[1, 1], data_abs2, data_abs_std2)
+    r = 2
+    im1 = plot_with_text(axes[0, 0], data1, data_std1, r)
+    im2 = plot_with_text(axes[0, 1], data2, data_std2, r)
+    im3 = plot_with_text_int(axes[1, 0], data_abs1, data_abs_std1)
+    im4 = plot_with_text_int(axes[1, 1], data_abs2, data_abs_std2)
 
     # Apply the same color limits to ensure consistent colors across the plots
     im1.set_clim(vmin1, vmax1)
@@ -1130,7 +1146,7 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
 
     # Add colorbars outside the plot using the `pad` parameter
     cbar_ax1 = fig.add_axes([0.92, 0.65, 0.02, 0.3])  # Position for the first colorbar
-    cbar_ax2 = fig.add_axes([0.92, 0.15, 0.02, 0.3])  # Position for the second colorbar
+    cbar_ax2 = fig.add_axes([0.92, 0.2, 0.02, 0.3])  # Position for the second colorbar
 
     # Add colorbars and set the labels directly
     cbar1 = fig.colorbar(im1, cax=cbar_ax1, orientation='vertical')
@@ -1140,17 +1156,21 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
     cbar2.set_label(r'$\Delta_f$')
 
     # Set axis labels for all subplots
-    axes[0, 0].set_xlabel('Reset time $t$')
-    axes[0, 0].set_ylabel('Number of factories')
+    #axes[0, 0].set_xlabel('Reset time $t$')
+    #axes[0, 0].set_ylabel('Number of factories')
 
-    axes[0, 1].set_xlabel('Reset time $t$')
-    axes[0, 1].set_ylabel('Number of factories')
+    #axes[0, 1].set_xlabel('Reset time $t$')
+    #axes[0, 1].set_ylabel('Number of factories')
 
-    axes[1, 0].set_xlabel('Reset time $t$')
-    axes[1, 0].set_ylabel('Number of factories')
+    #axes[1, 0].set_xlabel('Reset time $t$')
+    #axes[1, 0].set_ylabel('Number of factories')
 
-    axes[1, 1].set_xlabel('Reset time $t$')
-    axes[1, 1].set_ylabel('Number of factories')
+    #axes[1, 1].set_xlabel('Reset time $t$')
+    #axes[1, 1].set_ylabel('Number of factories')
+
+    fig.supxlabel('Reset time $t$', fontsize=12)
+    fig.supylabel('Number of factories', fontsize=12)
+    plt.subplots_adjust(left=0.15, right=0.95, top=0.95, bottom=0.12)  # Fine-tune spacing
 
     # Adjust layout to give room for colorbars
     plt.tight_layout(rect=[0, 0, 0.9, 1])
