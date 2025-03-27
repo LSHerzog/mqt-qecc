@@ -352,15 +352,15 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     # Define marker and color for each layout type
     # !CHOOSE WHICH LAYOUT STYLE YOU WANT, is q varied or is the depth varied? 
     layout_styles = {
-        "hex24": {"color": colors[0], "marker": "o", "linestyle": "--", "label": "hex, q=24"},
+        "hex24": {"color": colors[0], "marker": "o", "linestyle": "--", "label": "hex"},#, q=24"},
         "hex42": {"color": colors[0], "marker": "x", "linestyle": "--", "label": "hex, q=42"},
         "hex60": {"color": colors[0], "marker": "v", "linestyle": "--", "label": "hex, q=60"},
 
-        "row24": {"color": colors[1], "marker": "o", "linestyle": "--", "label": "row, q=24"},
+        "row24": {"color": colors[1], "marker": "o", "linestyle": "--", "label": "row"},#, q=24"},
         "row42": {"color": colors[1], "marker": "x", "linestyle": "--", "label": "row, q=42"},
         "row60": {"color": colors[1], "marker": "v", "linestyle": "--", "label": "row, q=60"},
 
-        "pair24": {"color": colors[2], "marker": "o", "linestyle": "--", "label": "pair, q=24"},
+        "pair24": {"color": colors[2], "marker": "o", "linestyle": "--", "label": "pair"},#, q=24"},
         "pair42": {"color": colors[2], "marker": "x", "linestyle": "--", "label": "pair, q=42"},
         "pair60": {"color": colors[2], "marker": "v", "linestyle": "--", "label": "pair, q=60"}
     }
@@ -396,10 +396,10 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     # Add unique legend entries
     legend = ax.legend(
         handles=list(legend_handles.values()), 
-        loc="upper center", 
-        bbox_to_anchor=(0.5, 1.4),  # Moves the legend above the plot, adapt this for other plots
+        loc="upper left", 
+        #bbox_to_anchor=(1.0, 0.5),  # Moves the legend above the plot, adapt this for other plots
         fontsize=10, 
-        ncol=3,  # Adjust the number of columns as needed
+        ncol=1,  # Adjust the number of columns as needed
         fancybox = False,
         borderpad=0.2,
         handletextpad=0.2,  # Reduce space between legend markers and text
@@ -409,7 +409,8 @@ def plot_improvement_circuit_types(res_lst: list[dict], path: str = "./results",
     legend.get_frame().set_edgecolor("black")
 
     ax.set_xticks(range(len(sorted_circuit_types)))
-    ax.set_xticklabels(sorted_circuit_types, rotation=45) 
+    sorted_circuit_types2 = ["seq.", "rand.", "max."]
+    ax.set_xticklabels(sorted_circuit_types2, rotation=45) 
 
     ax.set_ylabel(r"$\tilde{\Delta}$")#("Mean improvement $(n_i-n_f)/n_i$")
     ax.set_xlabel("Random Circuit type")
@@ -1102,9 +1103,9 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
         im = ax.imshow(data, cmap="viridis", aspect="auto")
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                ax.text(j, i, str(round(data[i, j], r)), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i, str(round(data[i, j], r)), ha="center", va="center", color="white", fontsize=12,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
-                ax.text(j, i + 0.2, "$\pm$" + str(round(data_std[i, j], r)), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i + 0.25, "$\pm$" + str(round(data_std[i, j], r)), ha="center", va="center", color="white", fontsize=12,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
         ax.set_xticks(list(available_t_dct.values()))
         ax.set_xticklabels(list(available_t_dct.keys()), rotation=45)
@@ -1117,9 +1118,9 @@ def plot_f_vs_t_subfigs(res_lst1: list[dict], res_lst2: list[dict], q: int, rati
         r=0
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                ax.text(j, i, str(int(round(data[i, j], r))), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i, str(int(round(data[i, j], r))), ha="center", va="center", color="white", fontsize=12,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
-                ax.text(j, i + 0.2, "$\pm$" + str(int(round(data_std[i, j], r))), ha="center", va="center", color="white", fontsize=10,
+                ax.text(j, i + 0.25, "$\pm$" + str(int(round(data_std[i, j], r))), ha="center", va="center", color="white", fontsize=12,
                         path_effects=[path_effects.withStroke(linewidth=1, foreground="black")])
         ax.set_xticks(list(available_t_dct.values()))
         ax.set_xticklabels(list(available_t_dct.keys()), rotation=45)
