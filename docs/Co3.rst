@@ -3,7 +3,8 @@ Compilation beyond the Surface Code `co3`
 
 This submodule contains an elementary routing routine for CNOT + T compilation on a hexagonal routing graph.
 Moreover the routing assumes that each accessible boundary can host both Z and X operators for lattice surgery.
-Thus, if a substrate cannot use all boundaries for lattice surgery (e.g. folded surface code), then the layouts must be chosen accordingly.
+Thus, if a substrate cannot use all boundaries for lattice surgery (e.g. folded surface code), one has to add adaptions to the routing etc and choose layouts wisely.
+Hence, this code is only viable for color codes only. Adaptions needed to incorporate valid paths for e.g. the folded surface code substrate.
 
 Layouts
 #######
@@ -33,5 +34,5 @@ Microscopic Details
 
 We consider two microscopic substrates, both leading to a hexagonal routing graph.
 First, the class `SnakeBuilderSTDW` builds stabilizers and subsets of stabilizers to perform logical meausrements for the color code connected by semi transparent domain walls.
-The class `SnakeBuilderSC` builds the surface code snakes required to perform lattice surgery between logical folded surface codes.
+The class `SnakeBuilderSC` builds the surface code snakes required to perform lattice surgery between logical folded surface codes. However, this can only display snakes where you can embed the snake in 2d.
 A notebook with example constructions can be found in `/microscopic/snake_examples.ipynb`.
